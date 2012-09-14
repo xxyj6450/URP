@@ -1,0 +1,45 @@
+SELECT 'alter table '+s.name +' alter column '+a.name +' identity(1,1)',a.colid
+  FROM sysobjects s,syscolumns a
+WHERE s.id=a.id
+AND a.name LIKE '%id'
+AND s.name LIKE 'cnk_%'
+AND a.colid=1
+ 
+ 
+alter table cnk_config alter column ID identity(1,1)
+alter table cnk_download alter column id identity(1,1)
+alter table cnk_downloadclass alter column classid identity(1,1)
+alter table cnk_feedback alter column id identity(1,1)
+alter table Cnk_GongGao alter column ggid identity(1,1)
+alter table cnk_guestbook alter column id identity(1,1)
+alter table Cnk_hometv alter column tvid identity(1,1)
+alter table Cnk_hr alter column hrid identity(1,1)
+alter table Cnk_hr_jianli alter column jlid identity(1,1)
+alter table cnk_images alter column id identity(1,1)
+alter table cnk_jigou alter column id identity(1,1)
+alter table Cnk_LoginAdmin alter column ID identity(1,1)
+alter table cnk_node alter column id identity(1,1)
+alter table cnk_orderdetail alter column id identity(1,1)
+alter table cnk_orderform alter column id identity(1,1)
+alter table cnk_otherform alter column id identity(1,1)
+alter table cnk_OtherImg alter column tvid identity(1,1)
+alter table cnk_payway alter column id identity(1,1)
+alter table cnk_person alter column ID identity(1,1)
+alter table cnk_pna alter column id identity(1,1)
+alter table cnk_pnd alter column pid identity(1,1)
+alter table cnk_product_img alter column id identity(1,1)
+alter table cnk_productclass alter column classid identity(1,1)
+alter table cnk_products alter column id identity(1,1)
+alter table cnk_province alter column provinceid identity(1,1)
+alter table cnk_sendway alter column id identity(1,1)
+alter table Cnk_users alter column UserID identity(1,1)
+alter table cnk_video alter column id identity(1,1)
+alter table cnk_vote alter column ID identity(1,1)
+alter table Cnk_webFavorite alter column ID identity(1,1)
+alter table cnk_weblinks alter column id identity(1,1)
+alter table cnk_world alter column worldid identity(1,1)
+alter table Cnk_Channel alter column ChannelID identity(1,1)
+alter table cnk_Admin alter column AdminID identity(1,1)
+alter table cnk_Article alter column id identity(1,1)
+alter table cnk_comment alter column id identity(1,1)
+alter table cnk_company_content alter column id identity(1,1)
