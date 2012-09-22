@@ -34,7 +34,7 @@ SELECT     dbo.Unicom_Orders.DocCode, dbo.Unicom_Orders.FormID, dbo.Unicom_Order
                       --政策信息
                       Unicom_Orders.packagename,dbo.Unicom_Orders.PackageCode, --dbo.Unicom_OrderDetails.DocItem, dbo.Unicom_OrderDetails.rowid,   
                       pg.PolicygroupID AS packageTypeID,pg.PolicyGroupName AS PackageType,dbo.Unicom_Orders.node,
-                     pg.path as PolicyGroupPath,pg.OpenAccount, pg.oldCustomerBusi as old,pg.hasPhone,pg.StockState
+                     pg.path as PolicyGroupPath,isnull(pg.OpenAccount,0) as OpenAccount, isnull(pg.oldCustomerBusi,0) as old,isnull(pg.hasPhone,0) as hasPhone,pg.StockState
 FROM         dbo.Unicom_Orders WITH(NOLOCK)
 					inner JOIN policy_h ph ON dbo.Unicom_Orders.PackageID=ph.DocCode 
                     inner Join T_PolicyGroup pg On ph.PolicygroupID=pg.PolicyGroupID
