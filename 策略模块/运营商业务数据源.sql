@@ -15,22 +15,21 @@ SELECT     dbo.Unicom_Orders.DocCode, dbo.Unicom_Orders.FormID, dbo.Unicom_Order
                        dbo.Unicom_Orders.ComboFEE,   dbo.Unicom_Orders.rewards, dbo.Unicom_Orders.totalmoney2, dbo.Unicom_Orders.DeductAmout, 
                        dbo.Unicom_Orders.totalmoney3, dbo.Unicom_Orders.totalmoney4, dbo.Unicom_Orders.Credit, dbo.Unicom_Orders.commission, 
                        --预存款项
-                       dbo.Unicom_Orders.Price, uo.Deposits,uo.BasicDeposits,uo.minDeposits,uo.DepositsMatcode,uo.DepositsMatName,
+                       dbo.Unicom_Orders.Price, Unicom_Orders.Deposits,Unicom_Orders.BasicDeposits,Unicom_Orders.minDeposits,Unicom_Orders.DepositsMatcode,Unicom_Orders.DepositsMatName,
                       --手机信息,空白卡
                       dbo.Unicom_Orders.CardNumber,dbo.Unicom_Orders.MatCode, case when isnull(dbo.Unicom_Orders.seriescode,'')='' then 0 else 1 end as Digit, --dbo.Unicom_OrderDetails.price AS SalePrice, dbo.Unicom_OrderDetails.netprice,   
                       dbo.Unicom_Orders.matmoney , dbo.Unicom_Orders.Matscore  as price2, dbo.Unicom_Orders.seriesCode,   
                       --dbo.Unicom_OrderDetails.selfprice, dbo.Unicom_OrderDetails.selfprice1, dbo.Unicom_OrderDetails.salesprice1, dbo.Unicom_OrderDetails.end4,   
                       dbo.iMatgeneral.mattype,     dbo.iMatGeneral.MatGroup,   
                       dbo.iMatGeneral.matname, dbo.iMatGeneral.isActived, dbo.iMatGeneral.MatState, dbo.iMatGeneral.MatFlag, dbo.iMatGeneral.MatImeiLong,   
-                      dbo.iMatGroup.matgroupname, dbo.iMatGroup.PATH AS matgroupPath, dbo.iSeries.vndcode, dbo.iSeries.purGRdate, dbo.iSeries.purGRDocCode, dbo.iSeries.state,   
+                      dbo.iMatGroup.matgroupname, dbo.iMatGroup.PATH AS matgroupPath,
                       --号码信息
                       dbo.Unicom_Orders.preAllocation,   
                      dbo.Unicom_Orders.inPool, dbo.Unicom_Orders.intype,   
                        dbo.Unicom_Orders.ReservedDoccode, dbo.Unicom_Orders.bitReturnd,   
-                     
                     --门店信息
                       dbo.oSDOrg.SDOrgName, dbo.oSDOrg.AreaID, dbo.oSDOrg.dptType, dbo.oSDOrg.PATH AS SDorgPath,  
-                      dbo.iSeries.AreaCode,ga.[PATH] AS areaPath,osdorg.mintype,dbo.iSeries.salesprice AS PickupPrice,
+                    ga.[PATH] AS areaPath,osdorg.mintype,
                       --政策信息
                       Unicom_Orders.packagename,dbo.Unicom_Orders.PackageCode, --dbo.Unicom_OrderDetails.DocItem, dbo.Unicom_OrderDetails.rowid,   
                       pg.PolicygroupID AS packageTypeID,pg.PolicyGroupName AS PackageType,dbo.Unicom_Orders.node,
@@ -42,12 +41,3 @@ FROM         dbo.Unicom_Orders WITH(NOLOCK)
 					 INNER JOIN   gArea ga ON dbo.oSDOrg.AreaID=ga.areaid  
 					left JOIN iMatgeneral WITH(NOLOCK) ON Unicom_Orders.MatCode=iMatgeneral.MatCode  
                     left Join  dbo.iMatGroup ON dbo.iMatGeneral.MatGroup = dbo.iMatGroup.matgroup   
-                    left JOIN  dbo.iSeries   WITH(NOLOCK) ON dbo.Unicom_Orders.seriesCode = dbo.iSeries.SeriesCode, unicom_orders uo
-                    
- 
-
-
-
-GO
-
-
