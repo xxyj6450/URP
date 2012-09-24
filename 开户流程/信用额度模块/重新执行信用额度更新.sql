@@ -10,13 +10,13 @@ declare curCommission cursor FAST_FORWARD READ_ONLY FOR
 select doccode,formid,commission,os.sdorgid,DocDate,os.sdorgname
 from unicom_orders,oSDOrg os
 where os.dptType='加盟店'
---and isnull(commission,0)=0
+and isnull(commission,0)=0
 and DocStatus<>0
 and unicom_orders.sdorgid=os.SDOrgID
-and DocDate>='2012-09-22'
+and DocDate>='2012-09-23'
 and FormID in(9102,9237,9146)
 and os.mintype in('专区','专柜')
-and unicom_orders.DocCode='RS20120922002802'
+--and unicom_orders.DocCode='RS20120922011482'
 open curCommission
 fetch next FROM curCommission into @Doccode,@FormID,@Commission,@sdorgid,@docdate,@SdorgName
 while @@FETCH_STATUS=0
@@ -27,7 +27,6 @@ while @@FETCH_STATUS=0
 			Where  DocCode = @doccode
 			Begin Try
 				--执行策略
-				print @Doccode+'正在执行....'
 				Exec sp_ExecuteStrategy @formid, @doccode, 1, '', '', ''
 				--更新信用额度
 				--exec sp_updatecredit  @FormID,@Doccode,@sdorgid,1,'','管理员批量调整佣金','SYSTEM'
@@ -39,12 +38,12 @@ while @@FETCH_STATUS=0
 						from oSDOrg a,oSDOrg b
 						where a.parentrowid=b.rowid
 						and a.sdorgid=@sdorgid
-					
+							print @AccountSdorgid
 							insert into oSDOrgCreditlog(Doccode,FormID,Docdate,Account,Event,SDorgID,SDorgName,OverRunLimit,
-							 CreditAmount,FrozenAmount,ChangeFrozenAmount,ChangeCredit,Commission,AvailabBalance,Usercode,
+							 CreditAmount,FrozenAmount,ChangeFrozenAmount,ChangeCredit,Commission,balance,AvailabBalance,Usercode,
 							 Remark,AccountSDorgID,Frozenstatus)
 							 select @doccode,@formid,getdate(),'113107','补返额度',@sdorgid,@sdorgname,0,
-							 osc.Balance,osc.FrozenAmount,0,-@Commission1,@Commission1,osc.AvailableBalance+isnull(@Commission1,0),'SYSTEM',
+							 osc.Balance,osc.FrozenAmount,0,-@Commission1,@Commission1,osc.Balance++isnull(@Commission1,0), osc.AvailableBalance+isnull(@Commission1,0),'SYSTEM',
 							 '管理员补返未即返的佣金.',@accountsdorgid,'已处理'
 							 from oSDOrgCredit osc
 							 where osc.SDOrgID=@AccountSdorgid
@@ -75,11 +74,13 @@ while @@FETCH_STATUS=0
 close curCommission
 deallocate curCommission
 
-select * from oSDOrgCredit osc where osc.SDOrgID='2.756.038'
+select * from oSDOrgCredit osc where osc.SDOrgID='2.752.112'
+select * from oSDOrgCreditlog osc where osc.accountSDOrgID='2.752.112' and osc.Doccode='RS20120922005044'
 
 rollback
 
+commit
 select uo.commission, *
-  from Unicom_Orders uo where uo.DocCode='RS20120922002802'
+  from Unicom_Orders uo where uo.DocCode='RS20120922000522'
 
-select * from fsubledgerlog f where f.doccode='RS20120922002802'
+select * from fsubledgerlog f where f.doccode='RS20120922005044'
