@@ -21,3 +21,4 @@
 *.rtf	 diff=astextplain
 *.RTF	 diff=astextplain
 *.sql  diff=astextplain
+*.sql text eol=crlf

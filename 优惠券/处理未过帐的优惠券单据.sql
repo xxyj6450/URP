@@ -2,6 +2,7 @@
 begin tran
 declare @doccode varchar(20),@formid int
 declare abc CURSOR FOR
+/*
 select formid,uo.doccode--,uo.matcouponsbarcode,uod.couponsbarcode
 from Unicom_Orders uo left join Unicom_OrderDetails uod on uo.DocCode=uod.DocCode
 where ( isnull(uo.matCouponsbarcode,'')<>''
@@ -11,7 +12,18 @@ and uo.DocDate>='2012-09-21'
 and not exists(
 	select  1 from Coupons_H ch where uo.DocCode=ch.RefCode)-- and ch.DocStatus!=0)
 order by uo.DocDate
+*/
+select formid,uo.doccode ,uod.couponsbarcode,refformid,uo.refcode
+from spickorderhd uo left join spickorderitem uod on uo.DocCode=uod.DocCode
+where   isnull( uod.CouponsBarCode,'')<>''
+and uo.DocDate>='2012-09-21'
+and not exists(
+	select  1 from Coupons_H ch where uo.DocCode=ch.RefCode)-- and ch.DocStatus!=0)
+and isnull(uo.refcode,'')=''
+and formid=2420
+order by uo.DocDate
 open abc
+ 
 fetch next FROM abc into @formid,@doccode
 while @@FETCH_STATUS=0
 	BEGIN
