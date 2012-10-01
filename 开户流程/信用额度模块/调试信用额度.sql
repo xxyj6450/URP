@@ -12,7 +12,7 @@ declare @ICCID varchar(20),@Seriescode varchar(50),@Doccode varchar(20),
 
 select @Doccode=uo.DocCode,@FormID=uo.FormID,@Seriescode=uo.SeriesCode,@ICCID=uo.ICCID
 from Unicom_Orders uo
-where uo.DocCode='RS20120924008321'
+where uo.DocCode='RS20120929005521'
 
   Begin Tran  
     Select * Into #iSeries From iSeries is1 where is1.SeriesCode in(isnull(@SeriesCode,''),left(isnull(@ICCID,''),19))
@@ -35,3 +35,10 @@ where uo.DocCode='RS20120924008321'
 	End Catch
 	
  rollback
+ 
+ begin TRAN
+ update Unicom_Orders
+	set DocDate = '2012-09-30'
+ where DocCode='PS20120929016501'
+ 
+ commit

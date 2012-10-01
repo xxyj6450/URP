@@ -15,7 +15,9 @@ SELECT     dbo.Unicom_Orders.DocCode, dbo.Unicom_Orders.FormID, dbo.Unicom_Order
                        dbo.Unicom_Orders.ComboFEE,   dbo.Unicom_Orders.rewards, dbo.Unicom_Orders.totalmoney2, dbo.Unicom_Orders.DeductAmout, 
                        dbo.Unicom_Orders.totalmoney3, dbo.Unicom_Orders.totalmoney4, dbo.Unicom_Orders.Credit, dbo.Unicom_Orders.commission, 
                        --预存款项
-                       dbo.Unicom_Orders.Price, Unicom_Orders.Deposits,Unicom_Orders.BasicDeposits,Unicom_Orders.minDeposits,Unicom_Orders.DepositsMatcode,Unicom_Orders.DepositsMatName,
+                       isnull(dbo.Unicom_Orders.Price,0) as Price,  isnull(Unicom_Orders.Deposits,0) as Deposits,
+                       isnull(Unicom_Orders.BasicDeposits,0) as BasicDeposits,isnull(Unicom_Orders.minDeposits,0) as minDeposits,
+                       Unicom_Orders.DepositsMatcode,Unicom_Orders.DepositsMatName,
                       --手机信息,空白卡
                       dbo.Unicom_Orders.CardNumber,dbo.Unicom_Orders.MatCode, case when isnull(dbo.Unicom_Orders.seriescode,'')='' then 0 else 1 end as Digit, --dbo.Unicom_OrderDetails.price AS SalePrice, dbo.Unicom_OrderDetails.netprice,   
                       dbo.Unicom_Orders.matmoney , dbo.Unicom_Orders.Matscore  as price2, dbo.Unicom_Orders.seriesCode,   
@@ -24,7 +26,7 @@ SELECT     dbo.Unicom_Orders.DocCode, dbo.Unicom_Orders.FormID, dbo.Unicom_Order
                       dbo.iMatGeneral.matname, dbo.iMatGeneral.isActived, dbo.iMatGeneral.MatState, dbo.iMatGeneral.MatFlag, dbo.iMatGeneral.MatImeiLong,   
                       dbo.iMatGroup.matgroupname, dbo.iMatGroup.PATH AS matgroupPath,
                       --号码信息
-                      dbo.Unicom_Orders.preAllocation,   
+                      isnull(dbo.Unicom_Orders.preAllocation,0) as preAllocation,   
                      dbo.Unicom_Orders.inPool, dbo.Unicom_Orders.intype,   
                        dbo.Unicom_Orders.ReservedDoccode, dbo.Unicom_Orders.bitReturnd,   
                     --门店信息
