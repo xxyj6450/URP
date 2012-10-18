@@ -1,20 +1,26 @@
- select uo.commission, uo.doccode ,old,uo.NetType,uo.ComboCode,uo.ComboName, ch.Price,uo.PackageID
- from Unicom_Orders uo inner join Combo_H ch on uo.ComboCode=ch.ComboCode
- where uo.PackageID='RS20120923003101'
+ select totalmoney2, uo.commission, uo.doccode ,old,uo.NetType,uo.ComboCode,uo.ComboName, ch.Price,uo.PackageID
+ from Unicom_Orders_2 uo inner join Combo_H ch on uo.ComboCode=ch.ComboCode
+ where uo.doccode='RS20121010003182'
 
+begin tran
+ 
 select * from strategy_dt where doccode='CLS2012081100001' AND Filter like '%TBD2012092200040%'
 select * from log_Strategy_HD where doccode='CLS2012081100001' order by EventTime desc
 
 declare @ICCID varchar(20),@Seriescode varchar(50),@Doccode varchar(20),
 @FormID int,@tips varchar(max),@Commission money,@sdorgid varchar(50),
-@docdate datetime
+@docdate datetime,@Totalmoney2 money
 
 
 select @Doccode=uo.DocCode,@FormID=uo.FormID,@Seriescode=uo.SeriesCode,@ICCID=uo.ICCID
 from Unicom_Orders uo
-where uo.DocCode='RS20120929005521'
+where uo.DocCode='RS20121010003542'
 
   Begin Tran  
+  exec sp_ExecuteExpression @FormID,@Doccode,'',@Totalmoney2 out
+  print @Totalmoney2
+  
+  rollback
     Select * Into #iSeries From iSeries is1 where is1.SeriesCode in(isnull(@SeriesCode,''),left(isnull(@ICCID,''),19))
 	Select * Into #DocData
 	From   v_unicomOrders_HD With(Nolock)
