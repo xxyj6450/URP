@@ -1,6 +1,6 @@
  select totalmoney2, uo.commission, uo.doccode ,old,uo.NetType,uo.ComboCode,uo.ComboName, ch.Price,uo.PackageID
  from Unicom_Orders_2 uo inner join Combo_H ch on uo.ComboCode=ch.ComboCode
- where uo.doccode='RS20121010003182'
+ where uo.doccode='RS20121026001421'
 
 begin tran
  
@@ -14,13 +14,14 @@ declare @ICCID varchar(20),@Seriescode varchar(50),@Doccode varchar(20),
 
 select @Doccode=uo.DocCode,@FormID=uo.FormID,@Seriescode=uo.SeriesCode,@ICCID=uo.ICCID
 from Unicom_Orders uo
-where uo.DocCode='RS20121010003542'
+where uo.DocCode='RS20121026001421'
 
   Begin Tran  
   exec sp_ExecuteExpression @FormID,@Doccode,'',@Totalmoney2 out
   print @Totalmoney2
   
   rollback
+  begin tran
     Select * Into #iSeries From iSeries is1 where is1.SeriesCode in(isnull(@SeriesCode,''),left(isnull(@ICCID,''),19))
 	Select * Into #DocData
 	From   v_unicomOrders_HD With(Nolock)
