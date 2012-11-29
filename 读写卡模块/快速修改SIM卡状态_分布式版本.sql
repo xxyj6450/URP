@@ -77,12 +77,12 @@ AS
 					isnull(@remark,'')+'状态修改至'+CONVERT(Varchar(3),newvalue),doccode,Formid,Formtype From @Table
 					--同时修改主服务器SIM卡信息
 					set xact_abort on;
-					SET @sql = 'Update OpenQuery(URP11,''Select isActived From JTURP.dbo.iSIMInfo with(nolock) Where ICCID='''''+@ICCID+''''''') ' + char(10)
+					SET @sql = 'Update OpenQuery(URP11,''Select isActived From JTURP.dbo.iSIMInfo  Where ICCID='''''+@ICCID+''''''') ' + char(10)
 							 + '					set isActived=ISNULL(isActived,0)^1'
 					exec sp_executesql @sql
 					if @@ROWCOUNT=0
 						BEGIN
-							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo with(nolock)'')'+Char(10)+
+							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo  '')'+Char(10)+
 							'SELECT '+@Fields +' From iSIMInfo with(nolock) Where ICCID='''+@ICCID+''''
 							Exec sp_executesql @sql
 						END
@@ -102,12 +102,12 @@ AS
 					isnull(@remark,'')+'状态修改至'+CONVERT(Varchar(3),newvalue),doccode,Formid,Formtype From @Table
 					--同时修改主服务器SIM卡信息
 					set xact_abort on;
-					SET @sql = 'Update OpenQuery(URP11,''Select isWriteen,WritenDate From JTURP.dbo.iSIMInfo with(nolock) Where ICCID='''''+@ICCID+''''''') ' + char(10)
+					SET @sql = 'Update OpenQuery(URP11,''Select isWriteen,WritenDate From JTURP.dbo.iSIMInfo  Where ICCID='''''+@ICCID+''''''') ' + char(10)
 							 + '					set isActived=ISNULL(isWriteen,0)^1,WritenDate=getdate()'
 					exec sp_executesql @sql
 					if @@ROWCOUNT=0
 						BEGIN
-							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo  with(nolock)'')'+Char(10)+
+							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo   '')'+Char(10)+
 							'SELECT '+@Fields +' From iSIMInfo  with(nolock) Where ICCID='''+@ICCID+''''
 							Exec sp_executesql @sql
 						END
@@ -129,7 +129,7 @@ AS
 					exec sp_executesql @sql
 					if @@ROWCOUNT=0
 						BEGIN
-							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo with(nolock)'')'+Char(10)+
+							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo '')'+Char(10)+
 							'SELECT '+@Fields +' From iSIMInfo with(nolock) Where ICCID='''+@ICCID+''''
 							Exec sp_executesql @sql
 						END
@@ -156,7 +156,10 @@ AS
 				begin
 					update iSIMInfo
 					SET doccode=NULL,
-					FormID=NULL
+					FormID=NULL,
+					SeriesNumber = NULL,
+					isLocked = 0,
+					isActived = 0
 					OUTPUT DELETED.ICCID,DELETED.SeriesCode,DELETED.SeriesNumber,DELETED.Doccode,DELETED.FormID,5,inserted.isLocked  INTO @table
 					WHERE ICCID=@ICCID
 					INSERT INTO iSIMInfo_Log(SeriesCode,ICCID,USIM,[Event],EventTime,TerminerID,Sdgroup,SeriesNumber,Remark,Doccode,Formid,FormType)
@@ -191,11 +194,11 @@ AS
 						BEGIN
 							if @FormID=9158
 								BEGIN
-									select @areaID=left(os.SDOrgID,3) from BusinessAcceptance_H bah with(nolock),oSDOrg os with(nolock) where bah.docCode=@doccode and os.SDOrgID=bah.SdorgID
+									select @areaID=left(os.areaid,3) from BusinessAcceptance_H bah with(nolock),oSDOrg os with(nolock) where bah.docCode=@doccode and os.SDOrgID=bah.SdorgID
 								END
 								if @FormID in(9102,9146,9237)
 								BEGIN
-									select @areaID=left(os.SDOrgID,3) from Unicom_Orders bah with(nolock),oSDOrg os with(nolock) where bah.docCode=@doccode and os.SDOrgID=bah.SdorgID
+									select @areaID=left(os.areaid,3) from Unicom_Orders bah with(nolock),oSDOrg os with(nolock) where bah.docCode=@doccode and os.SDOrgID=bah.SdorgID
 								END
 								select @option=isi.OptionID
 								  from iSIMOptionInfo isi where isi.AreaID=@areaID
@@ -215,7 +218,7 @@ AS
 						exec sp_executesql @sql
 						if @@ROWCOUNT=0
 						BEGIN
-							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo with(nolock)'')'+Char(10)+
+							Select @sql='Insert into OpenQuery(URP11,''Select '+@Fields+' From  JTURP.dbo.iSIMInfo  '')'+Char(10)+
 							'SELECT '+@Fields +' From iSIMInfo with(nolock) Where ICCID='''+@ICCID+''''
 							Exec sp_executesql @sql
 						END

@@ -4,8 +4,12 @@ GO
 reconfigure;
 GO
 EXEC sp_configure 'clr enabled' , '1'
-GO
 reconfigure;
+GO
+sp_configure 'Ole Automation Procedures',1
+RECONFIGURE
+go
+
 GO
 DECLARE @Sql AS NVARCHAR(4000)
 SELECT @Sql = 'ALTER DATABASE [' + DB_NAME() + '] SET TRUSTWORTHY ON' 
@@ -78,3 +82,22 @@ GO
 IF  EXISTS (SELECT * FROM sys.assemblies asms WHERE asms.name = N'GRQSH.Moebius.Common7')
 	DROP ASSEMBLY [GRQSH.Moebius.Common7]
 GO
+
+begin tran
+declare @sql varchar(max),@name varchar(200)
+declare cur CURSOR READ_ONLY fast_forward forward_only for 
+select name from sysobjects s where s.xtype='TA'
+and s.name like 'MoebiusTrigger_%'
+open cur
+fetch next FROM cur into @name
+while @@FETCH_STATUS=0
+	BEGIN
+		select @sql='Drop TRIGGER '+@name
+		exec(@sql)
+		fetch next FROM cur into @name
+	END
+	close cur
+	deallocate cur
+
+rollback
+commit

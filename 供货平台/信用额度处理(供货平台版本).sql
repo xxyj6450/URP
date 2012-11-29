@@ -7,14 +7,54 @@
 时间:2012-08-17
 功能说明:
 备注: 1.对过程对金额相当敏感. 2.要注意对事务和锁的使用.尤其是分布式事务. 3.任何数字字段或变量,都要加上ISNULL. 4.狙击一切可能发生的异常,包括不可能发生的.
+--------------------------------------------------------------------------
+更新时间:2012-12-24
+修改人:三断笛
+更新内容:
+修改信用额度处理逻辑.以流程的形式处理额度,主要是用于解决额度处理复杂流程的问题.
+本次升级主要解决订货供货流程中冻结额度的记录问题.
+发起流程时可能冻结额度.此时冻结状态为待处理.
+在后续的流程处理过程中,会不断减少冻结额度(后续流程不应增加冻结额度,冻结额度的增加只能有流程发起人员操作,而不应由流程处理人员操作.).
+在流程结束前,这些步骤所减少的冻结额度都呈待处理状态,以供查询流程的冻结额度.当流程彻底结束时,将所有后续流程标志成已处理.取消额度日志中所有冻结额度.
+而这些后续的流程可能是某个节点后发散形成多个并发的流程,各个分支流程并不知道自己是否是整个流程的终点,也就是说不知道整个流程何时彻底结束,即何时取消所有冻结额度.
+鉴于以上问题,做以下设计:
+1.增加额度流程表,记录流程编码(单号),冻结额度与已解冻额度标志.任何业务可以使用此流程表进行更复杂的控制.
+2.新增流程时,持启动流程标志(@StartFlow)将流程标志,冻结额度,写入额度流程表.
+3.对信用额度的处理与处理状态无关.即不管流程是否存在,流程是否结束,对额度的处理都不改变.以下流程仅影响额度明细日志.
+4.若流程存在,
+	4.1一个流程节点,若不会中止流程,且会改变冻结额度,则持"待处理"标志,流程ID标志,源单据标志.
+		4.1.1 若流程冻结额度<=已处理额度+本次冻结额度,则抛出异常
+		4.1.2 若流程冻结额度>=已处理额度+本次冻结额度,将在流程上增加一笔解冻额度,并同时增加一行待处理的冻结额度.
+	4.2一个流程节点,若可能将中止流程,则持"已处理"标志,流程ID标志,源单据标志.
+		4.2.1 若此时流程冻结额度<=已处理额度+本次冻结额度,则在流程上增加一笔冻结额度,并同时增加一行待处理冻结额度.
+	4.3 若此时流程冻结额度>=已处理额度+本次冻结额度,则自动将整个流程的所有节点标志"已处理"
+5.若流程不存在
+	5.1 若持"已处理"标志,则直接终止整个流程,所有流程节点标志"已处理".
+	5.2 若持"待处理"标志,则增加一行额度明细,状态为"待处理"
+
+代码逻辑将尽量简化上述流程的分支,用顺序流方式表述,并尽量重用代码.流程如下:
+1.取出信用额度,流程信息及单据信息.
+2.根据业务设置是否启动流程,是否结束流程.
+3.控制信用额度.
+4.若流程存在,且流程冻结额度<=已处理额度+本次冻结额度,则抛出异常,并退出.
+5.修改信用额度.
+6.若持"启动流程"标志,则插入一条新流程.
+7.增加额度日志.
+8.若流程存在,在流程记录中增加一笔处理额度.
+9.若持"已处理"标志
+	9.1 若流程存在,且此时流程冻结额度>=已处理额度+本次冻结额度,则自动将整个流程的所有节点标志"已处理"
+	9.2 若流程不存在,则将源单据流程改成"已处理"
+
 begin tran
-exec [sp_UpdateCredit] 6090,'DD20120924000020','2.1.769.02.04',0,'2'
+exec [sp_UpdateCredit] 4950,'JDC2012112300546','2.1.769.06.12',1,'1'
 rollback
+begin tran
+exec [sp_UpdateCredit] 9237,'RS20121126000001','2.1.769.09.29',1,'1'
+
 select * from oSDOrgCreditlog osc where osc.Doccode='DD20120924000020' order by osc.Docdate desc
 select * from osdorgcredit where sdorgid='2.020.426'
 */
- 
-ALTER proc [dbo].[sp_UpdateCredit]
+ ALTER proc [dbo].[sp_UpdateCredit]
 	@Formid int,							--功能号
 	@Doccode varchar(20),					--单号
 	@SDOrgID	varchar(50),				--门店编码
@@ -30,33 +70,39 @@ as
 /*************************************************变量定义*****************************************************/
 
 		declare @SDorgName           varchar(200),					--部门名称
-		        @Event               varchar(50),					--事件
-		        @tips					varchar(500),				--提示信息
+		        @Event               varchar(50),								--事件
+		        @tips					varchar(5000),							--提示信息
 		        --修改前的额度信息
-		        @OverRunLimit        money,							--可超支额度
-		        @Credit              money,							--信用额度
-		        @Balance             money,							--信用额度余额(=信用额度-本单应扣额度)
-		        @FrozenAmount        money,							--已冻结额度
-		        @AvailabBalance      money,							--当前可用额度(=信用额度+可超支额度-已冻结额度-本单冻结额度-本单应扣额度)
+		        @OverRunLimit        money,								--可超支额度
+		        @Credit              money,									--信用额度
+		        @Balance             money,									--信用额度余额(=信用额度-本单应扣额度)
+		        @FrozenAmount        money,								--已冻结额度
+		        @AvailabBalance      money,								--当前可用额度(=信用额度+可超支额度-已冻结额度-本单冻结额度-本单应扣额度)
 		        --修改的额度信息
-		        @ChangeCredit        money,							--本单应扣额度
+		        @ChangeCredit        money,								--本单应扣额度
 		        @ChangeFrozenAmount  money,							--本单冻结额度
-				@ChangeAmount	money,								--应收金额.该字段在提交审核时是冻结金额,在确认时是扣额度金额.
-				@Commission	money,									--佣金
-				@Rewards	money,									--现金奖励
-				@Refcode varchar(50),								--引用单号
-				@AccountSdorgid varchar(50),						--信用额度控制门店
-				@dptType varchar(50),								--门店类型
-				@minType varchar(50),								--部门性质
-				@ParentRowID varchar(50),							--部门上级节点
+				@ChangeAmount	money,									--应收金额.该字段在提交审核时是冻结金额,在确认时是扣额度金额.
+				@Commission	money,										--佣金
+				@Rewards	money,												--现金奖励
+				@Refcode varchar(50),										--引用单号
+				@AccountSdorgid varchar(50),							--信用额度控制门店
+				@dptType varchar(50),										--门店类型
+				@minType varchar(50),										--部门性质
+				@ParentRowID varchar(50),									--部门上级节点
 				@SourceDoccode varchar(20),							--源单号.指取消冻结额度时的原冻结额度的单据.
-				@FrozenStatus varchar(20),							--信用额度冻结状态,提交审核时"已冻结",确认时"已取消"
-				@Doctype varchar(50),								--单据类型
-				@FormType int,										--窗体模板类型
-				@TranCount int,										--事务数
+				@FrozenStatus varchar(20),									--信用额度冻结状态,提交审核时"已冻结",确认时"已取消"
+				@Doctype varchar(50),										--单据类型
+				@FormType int,													--窗体模板类型
+				@TranCount int,													--事务数
 				@Rowcount int,
 				@sql nvarchar(max),
-				@osdtype varchar(50)	
+				@osdtype varchar(50),
+				@StartFlow bit,													--启动流程
+				@FlowStatus VARCHAR(50),									--流程状态
+				@FlowExists BIT,												--流程是否存在
+				@FlowUnFrozenAmount money,							--本浏览已经解冻金额
+				@FlowInstanceID varchar(50),								--流程实例ID.用于记录一整个业务流程的标志,如订货流程,可以以订货单号为流程编号.
+				@FlowFrozenAmount money								--本流程已经冻结的金额
 		--定义表变量以存储修改前的信用额度信息
 		declare @table table(
 			Sdorgid varchar(50),
@@ -70,7 +116,7 @@ as
 		)
 /*************************************************传入参数检查**************************************************/
 
-if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,6052) return
+if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,6052,6093) return
 /*************************************************初始化数据*****************************************************/
 		--若未传入部门信息,则抛出异常
 		if ISNULL(@SDOrgID,'')=''
@@ -84,41 +130,35 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		where sdorgid=@SDOrgID
 		if @@ROWCOUNT=0
 			BEGIN
+				
 				raiserror('部门信息不存在,拒绝更新信息额度,请联系系统管理员',16,1)
 				return
 			END
 		--若非加盟店,则直接退出,不再继续.要注意此时的部门编码可能是加盟店,也可能是加盟商,需要兼容这两个级别的部门.
 		if isnull(@dptType,'') not in('加盟店') and isnull(@osdtype,'') not in('加盟') return
-		
+		SELECT @Rowcount=0
 /*************************************************开户业务*****************************************************/
 		--开户
 		if @Formid in(9102,9146,9237)
 			begin
 				--取出单据信息,若存储过程外有临时表,则优先从临时表取出数据
-				if object_id('tempdb.dbo.Unicom_Orders') is null
-					BEGIN
-						select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0)
-						from Unicom_Orders uo with(nolock)
-						where uo.DocCode=@Doccode
-						select @Rowcount=@@ROWCOUNT
-					END
-				else
+				if object_id('tempdb.dbo.Unicom_Orders') IS not null
 					BEGIN
 						select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0)
 						from #Unicom_Orders uo with(nolock)
 						where uo.DocCode=@Doccode
 						select @Rowcount=@@ROWCOUNT
-						--如果没有,再努力尝试一次,不要放弃.
-						if @Rowcount=0
-							BEGIN
-								select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0)
-								from Unicom_Orders uo with(nolock)
-								where uo.DocCode=@Doccode
-								select @Rowcount=@@ROWCOUNT
-							END
 					END
+					--如果没有,再努力尝试一次,不要放弃.
+					if isnull(@Rowcount,0)=0
+						BEGIN
+							select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0)
+							from Unicom_Orders uo with(nolock)
+							where uo.DocCode=@Doccode
+							select @Rowcount=@@ROWCOUNT
+						END
 					--实在没有的话,只能抛出异常了.
-					if @ROWCOUNT=0
+					if isnull(@ROWCOUNT,0) =0
 							BEGIN
 								raiserror('单据不存在,无法对信用额度进行更改.',16,1)
 								return
@@ -126,18 +166,20 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--提交审核,信用额度不变,增加预占额度
 				if @OptionID='1'
 					BEGIN
-						select @ChangeFrozenAmount=@ChangeAmount,@ChangeCredit=0,@Event='开户提交审核冻结额度',@FrozenStatus='待处理'
+						select @ChangeFrozenAmount=@ChangeAmount,@ChangeCredit=0,@Event='开户提交审核冻结额度',
+						@FrozenStatus='待处理'
 					end
 				--退回审核,取消冻结额度
 				else if @OptionID='2'
 					BEGIN
-						select @ChangeFrozenAmount= - @ChangeAmount,@ChangeCredit=0,@Event='开户取消,取消冻结额度',@FrozenStatus='已处理',@SourceDoccode=@Doccode
+						select @ChangeFrozenAmount= - @ChangeAmount,@ChangeCredit=0,@Event='开户取消,取消冻结额度',
+						@FrozenStatus='已处理',@SourceDoccode=@Doccode
 					END
-
 				--确认单据,扣信用额度,减少预占额度
 				else if @OptionID=''
 					BEGIN
-						select @ChangeCredit=@ChangeAmount-@Commission,@ChangeFrozenAmount=-@ChangeAmount,@Event='确认单据扣减额度,取消冻结额度.',@SourceDoccode=@Doccode,@FrozenStatus='已处理'
+						select @ChangeCredit=@ChangeAmount-@Commission,@ChangeFrozenAmount=-@ChangeAmount,
+						@Event='确认单据扣减额度,取消冻结额度.',@SourceDoccode=@Doccode,@FrozenStatus='已处理'
 					end
 				--若操作类型不存在,则抛出异常,防止非法操作
 				else
@@ -227,12 +269,14 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--退回审核,信用额度不变,取消预占额度
 				else if @OptionID='2'
 					BEGIN
-						select @ChangeCredit=0,@ChangeFrozenAmount=  -@ChangeAmount,@ChangeCredit=0,@Event='充值失败,取消冻结额度.',@FrozenStatus='已处理',@SourceDoccode=@Doccode
+						select @ChangeCredit=0,@ChangeFrozenAmount=  -@ChangeAmount,@ChangeCredit=0,@Event='充值失败,取消冻结额度.',
+						@FrozenStatus='已处理',@SourceDoccode=@Doccode
 					end
 				--确认单据,扣信用额度,减少预占额度
 				else if @OptionID=''
 					BEGIN
-						select @ChangeCredit=@ChangeAmount,@ChangeFrozenAmount=-@ChangeAmount,@Event='充值成功扣减信用额度,取消冻结额度.',@SourceDoccode=@Doccode,@FrozenStatus='已处理' 
+						select @ChangeCredit=@ChangeAmount,@ChangeFrozenAmount=-@ChangeAmount,
+						@Event='充值成功扣减信用额度,取消冻结额度.',@SourceDoccode=@Doccode,@FrozenStatus='已处理' 
 					end
 				--若操作类型不存在,则抛出异常,防止非法操作
 				else
@@ -247,22 +291,11 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		--总部订货申请单,增加冻结额度
 		if @Formid in(6090)
 			BEGIN
-				if @OptionID in('','2')
-					begin
-						select @ChangeAmount=isnull(SumNetMoney,0)
-						from ord_shopbestgoodsdoc with(nolock)
-						where DocCode=@Doccode
-						select @rowcount=@@rowcount
-					end
-				--分货时取差额.
-				if @OptionID in('3')
-					begin
-						select @ChangeAmount=isnull(SumNetMoney,0)-isnull(userdigit4,0)
-						from ord_shopbestgoodsdoc with(nolock)
-						where DocCode=@Doccode
-						select @rowcount=@@rowcount
-					end
-				if @ROWCOUNT=0
+				--订单作废
+				select @ChangeAmount=isnull(SumNetMoney,0),@FlowInstanceID=@Doccode
+				from ord_shopbestgoodsdoc with(nolock)
+				where DocCode=@Doccode
+				if @@ROWCOUNT=0
 					BEGIN
 						raiserror('单据不存在,无法对信用额度进行更改.',16,1)
 						return
@@ -270,17 +303,14 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--作废订单,取消额度冻结
 				if @OptionID='2'
 					BEGIN
-						select @ChangeFrozenAmount=-@ChangeAmount,@Event='订货作废,取消冻结额度.',@SourceDoccode=@Doccode,@FrozenStatus='已处理'
+						select @ChangeFrozenAmount=-@ChangeAmount,@Event='订货作废,取消冻结额度.',
+						@SourceDoccode=@Doccode,@FrozenStatus='已处理',@FlowInstanceID=@Doccode
 					end
-				--分货取额度
-				else if @OptionID='3'
-					BEGIN
-						select @ChangeFrozenAmount=-@ChangeAmount,@Event='分货处理额度.',@FrozenStatus='待处理'
-					END
+
 				--确认订单,冻结额度
 				else if @OptionID=''
 					BEGIN
-						select @ChangeFrozenAmount=@ChangeAmount,@Event='订货冻结额度.',@FrozenStatus='待处理'
+						select @ChangeFrozenAmount=@ChangeAmount,@Event='订货冻结额度.',@FrozenStatus='待处理',@FlowInstanceID=@Doccode,@StartFlow=1
 					end
 				--若操作类型不存在,则抛出异常,防止非法操作
 				else
@@ -291,25 +321,59 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--取出上级门店,作为信用额度控制
 				select @AccountSdorgid=sdorgid ,@SDorgName=sdorgname from oSDOrg os with(nolock) where os.rowid=@ParentRowID
 			END
+		--订货分货单,分货时需要将冻结额度的差额返还
+		if @Formid in(6093)
+			BEGIN
+				--ALTER TABLE ord_shopbestgoodsdoc ADD  REFDOC VARCHAR(50)
+				--分货时取差额.
+				select @ChangeAmount=isnull(SumNetMoney,0)-isnull(userdigit,0),@FlowInstanceID=ISNULL(RefDoc,'')
+				from ord_shopbestgoodsdoc with(nolock)
+				where DocCode=@Doccode
+				select @rowcount=@@rowcount
+				IF @rowcount=0
+					BEGIN
+						raiserror('单据不存在,无法对信用额度进行更改.',16,1)
+						return
+					end
+				--分货取额度
+				 if @OptionID IN('','1')
+					BEGIN
+						select @ChangeFrozenAmount=-@ChangeAmount,@Event='分货处理额度.',@FrozenStatus='待处理'
+					END
+				--若操作类型不存在,则抛出异常,防止非法操作
+				else
+				BEGIN
+					select @tips='更新信用额度操作类型未能识别,执行失败,请联系系统管理员'+convert(varchar(20),@optionid)
+					raiserror(@tips,16,1)
+					return
+				END
+				--取出上级门店,作为信用额度控制
+				select @AccountSdorgid=sdorgid ,@SDorgName=sdorgname from oSDOrg os with(nolock) where os.rowid=@ParentRowID
+			END
 		--发货指令单中止发货
 		if @Formid in(6052)
 			BEGIN
 				--供货平台此处取分货金额.
-				select @ChangeAmount=isnull(b.userdigit4,0),@Refcode=b.DocCode
+				select @Refcode=a.UserTxt1,@FlowInstanceID=ISNULL(a.UserTxt1,'')
 				from imatdoc_h a with(nolock) 
-				inner join ord_shopbestgoodsdoc b with(nolock) on a.UserTxt1=b.DocCode 
-				where a.FormID=6052 
+				where a.FormID=6052
 				and a.DocCode=@doccode
-				and b.FormID=6090
-				and b.phflag='已处理'
 				if @@ROWCOUNT=0
 					BEGIN
-						raiserror('该指令单没有待处理的订货单,无法对信用额度进行操作',16,1)
+						raiserror('指令单不存在,不允许操作.',16,1)
 						return
 					END
+				--取出本单更改金额
+				select @ChangeAmount=sum(isnull(totalmoney,0))
+				from imatdoc_d with(nolock)
+				where DocCode=@Doccode
 				if @OptionID='2'
 					BEGIN
-						select @ChangeFrozenAmount=-@ChangeAmount,@Event='中止发货取消订货冻结额度.',@SourceDoccode=@doccode,@FrozenStatus='已处理'
+						if left(@FlowInstanceID,2)='DD'
+							BEGIN
+								select @ChangeFrozenAmount=-@ChangeAmount,@Event='中止发货取消订货冻结额度.',
+								@SourceDoccode=@doccode,@FrozenStatus='已处理'
+							END
 					END
 				else
 					BEGIN
@@ -324,16 +388,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		if @Formid in(4950)
 			BEGIN
 				--取出单据信息,若存储过程外有临时表,则优先从临时表取出数据
-				if object_id('tempdb.dbo.sPickorderHD') is null
-					BEGIN
-						select @SDOrgID = os.sdorgid,@ChangeAmount = isnull(cavermoney,0),@ChangeCredit = isnull(cavermoney,0),
-						@Refcode = UserTxt1,@ChangeFrozenAmount = 0,@Event = '发货扣减信用额度.'
-						from   sPickorderHD sph with(nolock)
-							   inner join oStorage os with(nolock)on  sph.instcode = os.stCode
-						where  DocCode = @Doccode
-						select @Rowcount=@@ROWCOUNT
-					END
-				else
+				if object_id('tempdb.dbo.sPickorderHD') IS not null
 					BEGIN
 						select @SDOrgID = os.sdorgid,@ChangeAmount = isnull(cavermoney,0),@ChangeCredit = isnull(cavermoney,0),
 						@Refcode = UserTxt1,@ChangeFrozenAmount = 0,@Event = '发货扣减信用额度.'
@@ -341,17 +396,17 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 							   inner join oStorage os with(nolock)on  sph.instcode = os.stCode
 						where  DocCode = @Doccode
 						select @Rowcount=@@ROWCOUNT
-						if @Rowcount=0
-							BEGIN
-								select @SDOrgID = os.sdorgid,@ChangeAmount = isnull(cavermoney,0),@ChangeCredit = isnull(cavermoney,0),
-								@Refcode = UserTxt1,@ChangeFrozenAmount = 0,@Event = '发货扣减信用额度.'
-								from   sPickorderHD sph with(nolock)
-									   inner join oStorage os with(nolock)on  sph.instcode = os.stCode
-								where  DocCode = @Doccode
-								select @Rowcount=@@ROWCOUNT
-							END
-					END
-				if @ROWCOUNT=0
+					end
+					if isnull(@Rowcount,0)=0
+						BEGIN
+							select @SDOrgID = os.sdorgid,@ChangeAmount = isnull(cavermoney,0),@ChangeCredit = isnull(cavermoney,0),
+							@Refcode = UserTxt1,@ChangeFrozenAmount = 0,@Event = '发货扣减信用额度.'
+							from   sPickorderHD sph with(nolock)
+								   inner join oStorage os with(nolock)on  sph.instcode = os.stCode
+							where  DocCode = @Doccode
+							select @Rowcount=@@ROWCOUNT
+						END
+				if isnull(@ROWCOUNT,0)=0
 					BEGIN
 						raiserror('单据不存在,无法对信用额度进行更改.',16,1)
 						return
@@ -361,14 +416,24 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--若是根据订货单发的货,则需要减少冻结额度,减少的冻结额度为订货额度,而非发货时的额度.
 				if isnull(@Refcode,'')!=''
 					begin
-						--供货平台此处取分货金额.
-						select @ChangeFrozenAmount=-isnull(b.userdigit4,0),@Event=@Event+'取消订货冻结额度.',@SourceDoccode=b.doccode,@FrozenStatus='已处理'
-						from imatdoc_h a with(nolock) 
-						inner join ord_shopbestgoodsdoc b with(nolock) on a.UserTxt1=b.DocCode 
-						where a.FormID=6052 
-						and a.DocCode=@Refcode
-						and b.FormID=6090
-						and b.phflag='已处理'
+						--取订货单
+						select @Event=@Event+'减少订货冻结额度.',@SourceDoccode=a.UserTxt1,@FlowInstanceID=isnull(a.usertxt1,'')
+						from imatdoc_h a with(nolock)
+						where a.doccode=@Refcode
+						if @@rowcount=0
+							begin
+								raiserror('发货指令单不存在,无法检索到订货信息,无法处理信用额度.',16,1)
+								return
+							end
+						--只有当订货单号是以DD开头的订货单时,才处理信用额度.
+						if @SourceDoccode like 'DD%'
+							begin
+								--取指令单上的分货金额,用于减少冻结额度.
+								select @ChangeFrozenAmount=-sum(isnull(b.totalmoney,0)),@FrozenStatus='已处理'
+								from  imatdoc_d   b with(nolock) 
+								where  b.DocCode=@Refcode
+								group by b.doccode
+							end
 					END
 			end
 /*************************************************退货单*****************************************************/
@@ -383,6 +448,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				if @@ROWCOUNT=0
 					BEGIN
 						raiserror('单据不存在,无法对信用额度进行更改.',16,1)
+						return
 					END
  
 			    --取出上级门店,作为信用额度控制
@@ -392,7 +458,6 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		--返现单,增加冻结额度,信用额度不变
 		if @Formid in(4956)
 			begin
-				
 				select  @ChangeAmount=isnull(amount,0),@ChangeCredit=0,@AccountSdorgid=@Sdorgid
 				from farcashindoc with(nolock)
 				where DocCode=@Doccode
@@ -453,12 +518,23 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				SET @sql = 'select @AvailabBalance=ISNULL(AvailableBalance,0),@OverRunLimit=ISNULL(OverrunLimit,0),@FrozenAmount= ISNULL(FrozenAmount,0), ' + char(10)
 				 + '				@Balance=isnull(Balance,0) ' + char(10)
 				 + '				from OpenQuery(URP11,''Select AvailableBalance,OverrunLimit,FrozenAmount,Balance From JTURP.dbo.oSDOrgCredit  ' + char(10)
-				 + '				where SDorgID='''''+@AccountSdorgid +'''''' + char(10)
+				 + '				where SDorgID='''''+isnull(@AccountSdorgid,'') +'''''' + char(10)
 				 + '				and Account=''''113107'''''')'
 				--Print @sql
 				Exec sp_executesql @sql,N'@AvailabBalance money output,@OverRunLimit money output,@FrozenAmount money output,@Balance money output',
 				@AvailabBalance=@AvailabBalance Output,@OverRunLimit=@OverRunLimit Output,@FrozenAmount=@FrozenAmount Output,@Balance=@Balance output
 				select @Rowcount=@@ROWCOUNT
+				--若非启动流程,则取出已有流程的信息,并标志流程是否存在.
+				if isnull(@StartFlow,0)=0 AND isnull(@FlowInstanceID,'')<>''
+					BEGIN
+						SET @sql = 'select @FlowFrozenAmount=ISNULL(FrozenAmount,0),@FlowUnFrozenAmount=ISNULL(ProcessedAmount,0),@FlowStatus=ISNULL(FlowStatus,''未完成'')'
+						 + '				from OpenQuery(URP11,''Select FrozenAmount,ProcessedAmount ,FlowStatus From JTURP.dbo.oSDOrgCreditFlow  ' + char(10)
+						 + '				where FlowInstanceID='''''+isnull(@FlowInstanceID,'') +''''''')' + char(10)
+						--Print @sql
+						Exec sp_executesql @sql,N'@FlowFrozenAmount money output,@FlowUnFrozenAmount money output,@FlowStatus varchar(50) output',
+						@FlowFrozenAmount=@FlowFrozenAmount Output,@FlowUnFrozenAmount=@FlowUnFrozenAmount OUTPUT,@FlowStatus=@FlowStatus output
+						SELECT @FlowExists=CASE WHEN @@ROWCOUNT=0 THEN 0 ELSE 1 end
+					END
 			End
 		Else
 			--非分布式操作本地直接完成即可.
@@ -469,12 +545,21 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				where osc.SDorgID=@AccountSdorgid
 				and osc.Account='113107'
 				select @Rowcount=@@ROWCOUNT
+				--若非启动流程,则取出已有流程的信息,并标志流程是否存在.
+				if isnull(@StartFlow,0)=0 AND ISNULL(@FlowInstanceID,'')<>''
+					BEGIN
+						select @FlowFrozenAmount=ISNULL(FrozenAmount,0),@FlowUnFrozenAmount=ISNULL(ProcessedAmount,0),@FlowStatus=ISNULL(FlowStatus,'未完成')
+						from dbo.oSDOrgCreditFlow WITH(NOLOCK)
+						where FlowInstanceID= @FlowInstanceID
+						SELECT @FlowExists=CASE WHEN @@ROWCOUNT=0 THEN 0 ELSE 1 END
+					end
 			END
 		if @ROWCOUNT=0 and @Formid not in (2041)
 			BEGIN
 				raiserror('不存在此部门的信用额度信息,请初始化额度后再操作!',16,1)
 				return
 			END
+		
 	---------------------------------------------------------------检查信用额度------------------------------------------------------------------
 		--当提交审核或确认时,对信用额度进行检查
 		if isnull(@OptionID,'') in('','1') and @ControlBalance=1
@@ -484,26 +569,36 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 					BEGIN
 						SELECT @tips = 
 						            '您的信用额度不足，请及时充值并确认已经通过审核的单据！' + dbo.crlf() +
+						            '您可超支额度:'+convert(varchar(50),isnull(@OverRunLimit,0)) + dbo.crlf() +
+						            '您已冻结额度:' + convert(varchar(50),isnull(@FrozenAmount,0))+dbo.crlf()+
 						            '您当前余额:' + convert(varchar(50),isnull(@Balance,0)) + dbo.crlf() +
-						            '可超支额度:'+convert(varchar(50),isnull(@OverRunLimit,0)) + dbo.crlf() +
+						            '您当前可用余额:' + convert(varchar(50),ISNULL(@AvailabBalance,0)) + dbo.crlf() +
 						            '本单应扣额度:' + convert(varchar(50),isnull(@ChangeCredit,0)) + dbo.crlf() +
-						            '冻结额度:' + convert(varchar(50),isnull(@FrozenAmount,0))
+						            '本单冻结额度'+convert(varchar(50),isnull(@ChangeFrozenAmount,0)) + dbo.crlf() +
+						             '本单佣金'+convert(varchar(50),isnull(@Commission,0)) + dbo.crlf() 
 						 RAISERROR(@tips,16,1) 
 						 RETURN
 					END
+			END
+		--流程状态控制
+		IF @FlowExists=1 AND ISNULL(@FlowStatus,'未完成')='已完成'
+			BEGIN
+				RAISERROR('本流程已处理结束,禁止继续操作.',16,1)
+				return
 			END
 /******************************************************统一更新信用额度信息******************************************************/
 			--保证在分布式环境中事务可用.
 			set xact_abort on
 			--记录当前事务量.若此前已经有事务则不再启动事务,交由外部事务处理.若外部无事务,则启动一个事务.
-			select @TranCount=@@TRANCOUNT	
+			select @TranCount=@@TRANCOUNT,@Rowcount=0
 			if @TranCount=0	begin tran
 			begin try
 				--更新信用额度
 				--分布式更新需要采用动态SQL方式更新
-				If @Formid In(9102,9146,9237,6090,9167,9244,9267)
+				If @Formid In(9102,9146,6090,9167,9244,9267)
 					BEGIN
-						SET @sql = '			update Openquery(URP11,''SELECT FrozenAmount,Balance,ModifyDate,ModifyUser,terminalID,ModifyDoccode From JTURP.dbo.oSDOrgCredit a Where SDOrgID='''''+@AccountSdorgid+''''' AND Account=''''113107'''''')' + char(10)
+						SET @sql = '	update Openquery(URP11,''SELECT FrozenAmount,Balance,ModifyDate,ModifyUser,terminalID,ModifyDoccode '+CHAR(10)
+						 + '				From JTURP.dbo.oSDOrgCredit a Where SDOrgID='''''+isnull(@AccountSdorgid,'')+''''' AND Account=''''113107'''''')' + char(10)
 						 + '				set    FrozenAmount  = isnull(FrozenAmount,0) + isnull(@ChangeFrozenAmount,0), ' + char(10)
 						 + '					   Balance       = isnull(Balance,0) -isnull(@ChangeCredit,0), ' + char(10)
 						 + '					   ModifyDate = getdate(), ' + char(10)
@@ -512,7 +607,15 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						 + '					   ModifyDoccode = @Doccode'
  
 						Exec sp_executesql @sql,N'@ChangeFrozenAmount money,@ChangeCredit money, @Usercode varchar(50),@TerminalID varchar(50),@Doccode varchar(50),@AccountSdorgid varchar(50)',
-						@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid
+						@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,
+						@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid
+						SELECT @Rowcount=@@ROWCOUNT
+						--若起始流程,则插入一条记录.
+						if @StartFlow=1
+							BEGIN
+								Insert into Openquery(URP11,'Select  FlowInstanceID,Formid,FrozenAmount from JTURP.dbo.oSdorgCreditFlow')
+								select @FlowInstanceID,@Formid,@ChangeFrozenAmount
+							END
 					End
 				Else
 				--本地更新则直接update
@@ -535,8 +638,14 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						from   oSDOrgCredit a ---->注意此处不要加上with(nolock)
 						where  a.SDOrgID = @AccountSdorgid
 							   and a.Account = '113107'
+						SELECT @Rowcount=@@ROWCOUNT
+						--若起始流程,则插入一条浏览记录.
+						if @StartFlow=1
+							BEGIN
+								Insert into  dbo.oSdorgCreditFlow(FlowInstanceID,Formid,FrozenAmount )
+								select @FlowInstanceID,@Formid,@ChangeFrozenAmount
+							END
 					END
-				
 			/*update Openquery(URP11,'SELECT FrozenAmount,Balance,ModifyDate,ModifyUser,terminalID,ModifyDoccode From oSDOrgCredit a Where SDOrgID=''' +@AccountSdorgid+''' ADN Account=''113107'''
 				set    FrozenAmount  = isnull(FrozenAmount,0) + isnull(@ChangeFrozenAmount,0),
 					   Balance       = isnull(a.Balance,0) -isnull(@ChangeCredit,0),
@@ -544,10 +653,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 					   ModifyUser = @Usercode,
 					   terminalID=@TerminalID,
 					   ModifyDoccode = @Doccode*/
-			
-
 				--若不存在,则要报错
-				if @@ROWCOUNT=0
+				if @ROWCOUNT=0
 					BEGIN
 						--若是信用额度初始化,则插入一条记录.
 						if @Formid in(2041)
@@ -562,8 +669,9 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						else
 							BEGIN
 								--当外部无事务时,则上面代码有启动事务,需要回滚前面的事务.
+								--PRINT @AccountSdorgid
 								if @trancount=0 and @@TRANCOUNT>0 rollback
-								raiserror('不存在此部门的信用额度信息,请初始化额度后再操作!',16,1)
+								raiserror('未更新信用额度信息,因为不存在此部门的信用额度信息,请初始化额度后再操作!',16,1)
 							END
 						
 					END
@@ -587,11 +695,28 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						   Account, [Event], SDorgID, SDorgName, OverRunLimit, 
 						   CreditAmount, FrozenAmount, ChangeFrozenAmount, ChangeCredit, 
 						   Commission, Rewards, Balance, AvailabBalance, Usercode, 
-						   Remark, TerminalID, FrozenStatus, refCode,AccountSdorgid from JTURP.dbo.oSdorgCreditLog')
+						   Remark, TerminalID, FrozenStatus, refCode,AccountSdorgid,FlowInstanceID from JTURP.dbo.oSdorgCreditLog')
 						select @Doccode,@Formid,@FormType,getdate(),@Doctype,'113107',@Event,@SDOrgID,@SDorgName,@OverRunLimit,@Balance,@FrozenAmount,
 							   @ChangeFrozenAmount,@ChangeCredit,@Commission,@Rewards,isnull(@Balance,0) -isnull(@ChangeCredit,0),
-							   isnull(@AvailabBalance,0)-isnull(@ChangeFrozenAmount,0)-isnull(@ChangeCredit,0),@Usercode,@Remark,@TerminalID,@FrozenStatus,
-							   @Refcode,@AccountSdorgid
+							   isnull(@AvailabBalance,0)-isnull(@ChangeFrozenAmount,0)-isnull(@ChangeCredit,0),@Usercode,@Remark,@TerminalID,
+							   CASE  
+										WHEN @FrozenStatus='已处理' and @FlowExists=1 and isnull(@FlowStatus,'')='未完成' then '待处理'
+										else @FrozenStatus
+								end, 
+							   @Refcode,@AccountSdorgid,@FlowInstanceID
+						--若非起始节点的待处理,则修改已处理额度.
+						 if isnull(@StartFlow,0)=0 AND ISNULL(@FlowExists,0)=1
+							BEGIN
+								SET @sql = '			update Openquery(URP11,''SELECT ProcessedAmount From JTURP.dbo.oSDOrgCreditFlow a Where FlowInstanceID='''''+isnull(@FlowInstanceID,'')+''''' AND )' + char(10)
+									 + '				set    ProcessedAmount  = isnull(ProcessedAmount,0) - isnull(@ChangeFrozenAmount,0), ' + char(10)
+									 + '					   ModifyDate = getdate(), ' + char(10)
+									 + '					   ModifyUser = @Usercode, ' + char(10)
+									 + '					   terminalID=@TerminalID, ' + char(10)
+									 + '					   ModifyDoccode = @Doccode'
+									Exec sp_executesql @sql,N'@ChangeFrozenAmount money,@ChangeCredit money, @Usercode varchar(50),@TerminalID varchar(50),@Doccode varchar(50),@AccountSdorgid varchar(50)',
+									@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,
+									@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid 
+							END
 					End
 				Else
 					BEGIN
@@ -599,15 +724,31 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						   Account, [Event], SDorgID, SDorgName, OverRunLimit, 
 						   CreditAmount, FrozenAmount, ChangeFrozenAmount, ChangeCredit, 
 						   Commission, Rewards, Balance, AvailabBalance, Usercode, 
-						   Remark, TerminalID, FrozenStatus, refCode,AccountSdorgid)
+						   Remark, TerminalID, FrozenStatus, refCode,AccountSdorgid,FlowInstanceID)
 						select @Doccode,@Formid,@FormType,getdate(),@Doctype,'113107',@Event,@SDOrgID,@SDorgName,@OverRunLimit,@Balance,@FrozenAmount,
 							   @ChangeFrozenAmount,@ChangeCredit,@Commission,@Rewards,isnull(@Balance,0) -isnull(@ChangeCredit,0),
-							   isnull(@AvailabBalance,0)-isnull(@ChangeFrozenAmount,0)-isnull(@ChangeCredit,0),@Usercode,@Remark,@TerminalID,@FrozenStatus,
-							   @Refcode,@AccountSdorgid
+							   isnull(@AvailabBalance,0)-isnull(@ChangeFrozenAmount,0)-isnull(@ChangeCredit,0),@Usercode,@Remark,@TerminalID,
+							   CASE  
+										WHEN @FrozenStatus='已处理' and isnull(@FlowExists,0)=1 and isnull(@FlowStatus,'')='未完成' then '待处理'
+										else @FrozenStatus
+								end,
+							   @Refcode,@AccountSdorgid,@FlowInstanceID
+						--若非起始节点的待处理,则修改已处理额度.
+						 if   isnull(@StartFlow,0)=0 AND ISNULL(@FlowExists,0)=1
+							BEGIN
+								update a
+								set ProcessedAmount  = isnull(ProcessedAmount,0) - isnull(@ChangeFrozenAmount,0),
+									   ModifyDate = getdate(),
+									   ModifyUser = @Usercode,
+									   terminalID=@TerminalID,
+									   ModifyDoccode = @Doccode 
+									   ,FlowStatus=CASE WHEN isnull(ProcessedAmount,0) - isnull(@ChangeFrozenAmount,0)>=ISNULL(a.FrozenAmount,0) THEN '已完成' else isnull(a.FlowStatus,'未完成') end
+								from   oSDOrgCreditFlow a
+								where a.flowInstanceID=@FlowInstanceID
+							end
 					END
 				--当有原始单号,且冻结状态处理完毕时,更新原冻结额度状态
-				if isnull(@SourceDoccode,'') != ''
-				   and @FrozenStatus = '已处理'
+				if  isnull(@SourceDoccode,'')!='' and @FrozenStatus = '已处理'
 				Begin
 					If  @Formid In(9102,9146,9237,6090,9167,9244,9267)
 						BEGIN
@@ -615,331 +756,56 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 							set    frozenstatus      = @FrozenStatus,
 								   Refcode           = @SourceDoccode
 							*/
-							SET @sql = 'Update Openquery(URP11,''Select frozenstatus,Refcode From JTURP.dbo.oSdorgCreditLog  where  Doccode  ='''''+ @SourceDoccode+'''''and frozenStatus  = ''''待处理'''''') ' + char(10)
-									 + '							set    frozenstatus      = @FrozenStatus, ' + char(10)
-									 + '								   Refcode           = @SourceDoccode'
-							Print @sql
-							Exec sp_executesql @sql,N'@SourceDoccode varchar(30),@FrozenStatus varchar(20)',
-							@SourceDoccode=@SourceDoccode,@FrozenStatus=@FrozenStatus
+							--若流程存在,且已处理额度大于等于冻结额度,则终止流程.
+							IF @FlowExists=1 AND ISNULL(@FlowFrozenAmount,0)<=ISNULL(@FlowUnFrozenAmount,0)-ISNULL(@ChangeFrozenAmount,0)  AND ISNULL(@FlowInstanceID,'')<>''
+								BEGIN
+									SET @sql = 'Update Openquery(URP11,''Select frozenstatus,Refcode From JTURP.dbo.oSdorgCreditLog  where  FlowInstanceID  ='''''+ isnull(@FlowInstanceID,'')+''''''+char(10)+
+									 ' and frozenStatus  = ''''待处理'''''')' + char(10)
+											 + '							set    frozenstatus      = ''已处理'', ' + char(10)
+											 + '								   Refcode           = @Doccode'
+									--Print @sql
+									Exec sp_executesql @sql,N'@SourceDoccode varchar(30),@FrozenStatus varchar(20),@Doccode varchar(50)',
+									@SourceDoccode=@SourceDoccode,@FrozenStatus=@FrozenStatus,@Doccode=@Doccode
+								END
+							IF ISNULL(@FlowExists,0)=0
+								BEGIN
+									SET @sql = 'Update Openquery(URP11,''Select frozenstatus,Refcode From JTURP.dbo.oSdorgCreditLog  where  Doccode  ='''''+ isnull(@SourceDoccode,'')+''''''+char(10)+
+									 '  and frozenStatus  = ''''待处理'''''')  ' + char(10)
+											 + '							set    frozenstatus      = @FrozenStatus, ' + char(10)
+											 + '								   Refcode           = @Doccode'
+									--Print @sql
+									Exec sp_executesql @sql,N'@SourceDoccode varchar(30),@FrozenStatus varchar(20),@Doccode varchar(50)',
+									@SourceDoccode=@SourceDoccode,@FrozenStatus=@FrozenStatus,@Doccode=@Doccode
+								END
 						End
 					Else
 						BEGIN
-							update oSdorgCreditLog
-							set    frozenstatus      = @FrozenStatus,
-								   Refcode           = @SourceDoccode
-							where  Doccode           = @SourceDoccode
-								   and frozenStatus  = '待处理'
+							IF @FlowExists=1 AND ISNULL(@FlowFrozenAmount,0)<=ISNULL(@FlowUnFrozenAmount,0)-ISNULL(@ChangeFrozenAmount,0) AND ISNULL(@FlowInstanceID,'')<>''
+								BEGIN
+									update oSdorgCreditLog
+									set    frozenstatus      = @FrozenStatus,
+										   Refcode           = @SourceDoccode
+									WHERE FlowInstanceID=@FlowInstanceID
+										   and frozenStatus  = '待处理'
+								END
+							IF ISNULL(@FlowExists,0)=0
+								BEGIN
+									update oSdorgCreditLog
+									set    frozenstatus      = @FrozenStatus,
+										   Refcode           = @SourceDoccode
+									where  Doccode           = @SourceDoccode
+										   and frozenStatus  = '待处理'
+								END
 						END
-					
 				end
 				--当外部无事务时,则前面的代码启动了事物,需要提交之.
 				if @TranCount =0 commit
 			end try
 			begin catch
-				if @TranCount=0 and @@TRANCOUNT>0 rollback
-				select @tips='更新信用额度失败!'+dbo.crlf()+'异常信息:' +isnull(error_message(),'')+dbo.crlf()+'请联系系统管理员.'
+				if @TranCount=0 and @@TRANCOUNT>0  rollback
+				select @tips=dbo.getLastError('更新信用额度失败!' )
 				raiserror(@tips,16,1)
 				return
 			end catch	
 	end
-/*
-USE [URPDB]
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_OverrunLimit]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_OverrunLimit]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_FrozenAmount]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_FrozenAmount]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_Balance]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_Balance]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_CreateDate]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_CreateDate]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_ModifyDate]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_ModifyDate]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_APPName]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_APPName]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSDOrgCredit_sUserName]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSDOrgCredit] DROP CONSTRAINT [DF_oSDOrgCredit_sUserName]
-END
-
-GO
-
-USE [URPDB]
-GO
-
  
-IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[oSDOrgCredit]') AND type in (N'U'))
-DROP TABLE [dbo].[oSDOrgCredit]
-GO
-
-USE [URPDB]
-GO
-
- 
-SET ANSI_NULLS ON
-GO
-
-SET QUOTED_IDENTIFIER ON
-GO
-
-SET ANSI_PADDING ON
-GO
-
-CREATE TABLE [dbo].[oSDOrgCredit](
-	[SDOrgID] [varchar](30) NOT NULL,
-	[Account] [varchar](10) NOT NULL,
-	[OverrunLimit] [money] NULL,
-	[FrozenAmount] [money] NULL,
-	[Balance] [money] NULL,
-	[AvailableBalance]  AS ((isnull([OverrunLimit],(0))+isnull([Balance],(0)))-isnull([FrozenAmount],(0))),
-	[CreateDoccode] [varchar](50) NULL,
-	[CreateDate] [datetime] NULL,
-	[CreateUser] [varchar](50) NULL,
-	[ModifyDoccode] [varchar](50) NULL,
-	[ModifyDate] [datetime] NULL,
-	[ModifyUser] [varchar](50) NULL,
-	[APPName] [varchar](500) NULL,
-	[sUserName] [varchar](50) NULL,
-	[TerminalID] [varchar](50) NULL,
- CONSTRAINT [PK_oSDOrgCredit] PRIMARY KEY CLUSTERED 
-(
-	[SDOrgID] ASC,
-	[Account] ASC
-)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
-) ON [PRIMARY]
-
-GO
-
-SET ANSI_PADDING OFF
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_OverrunLimit]  DEFAULT ((0)) FOR [OverrunLimit]
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_FrozenAmount]  DEFAULT ((0)) FOR [FrozenAmount]
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_Balance]  DEFAULT ((0)) FOR [Balance]
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_CreateDate]  DEFAULT (getdate()) FOR [CreateDate]
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_ModifyDate]  DEFAULT (getdate()) FOR [ModifyDate]
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_APPName]  DEFAULT (app_name()) FOR [APPName]
-GO
-
-ALTER TABLE [dbo].[oSDOrgCredit] ADD  CONSTRAINT [DF_oSDOrgCredit_sUserName]  DEFAULT (suser_name()) FOR [sUserName]
-GO
-
-
-
-
-
-USE [URPDB]
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_OverRunLimit]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_OverRunLimit]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_CreditAmount]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_CreditAmount]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_Table_1_FrozenLimit]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_Table_1_FrozenLimit]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_ChangeFrozenAmount]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_ChangeFrozenAmount]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_ChangeAmount]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_ChangeAmount]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_Commission]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_Commission]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_Rewards]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_Rewards]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_Balance]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_Balance]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_AvailabBalance]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_AvailabBalance]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_APPName]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_APPName]
-END
-
-GO
-
-IF  EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'[DF_oSdorgCreditLog_sUserName]') AND type = 'D')
-BEGIN
-ALTER TABLE [dbo].[oSdorgCreditLog] DROP CONSTRAINT [DF_oSdorgCreditLog_sUserName]
-END
-
-GO
-
-USE [URPDB]
-GO 
-IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[oSdorgCreditLog]') AND type in (N'U'))
-DROP TABLE [dbo].[oSdorgCreditLog]
-GO
-
-USE [URPDB]
-GO
-
- 
-SET ANSI_NULLS ON
-GO
-
-SET QUOTED_IDENTIFIER ON
-GO
-
-SET ANSI_PADDING ON
-GO
-
-CREATE TABLE [dbo].[oSdorgCreditLog](
-	[ID] [int] IDENTITY(1,1) NOT NULL,
-	[Doccode] [varchar](50) NULL,
-	[FormID] [int] NULL,
-	[FormType] [int] NULL,
-	[Docdate] [datetime] NULL,
-	[DocType] [varchar](50) NULL,
-	[Account] [varchar](50) NULL,
-	[Event] [varchar](50) NULL,
-	[SDorgID] [varchar](50) NULL,
-	[SDorgName] [varchar](50) NULL,
-	[OverRunLimit] [money] NULL,
-	[CreditAmount] [money] NULL,
-	[FrozenAmount] [money] NULL,
-	[ChangeFrozenAmount] [money] NULL,
-	[ChangeCredit] [money] NULL,
-	[Commission] [money] NULL,
-	[Rewards] [money] NULL,
-	[Balance] [money] NULL,
-	[AvailabBalance] [money] NULL,
-	[Usercode] [varchar](50) NULL,
-	[Remark] [varchar](500) NULL,
-	[TerminalID] [varchar](50) NULL,
-	[APPName] [varchar](500) NULL,
-	[sUserName] [varchar](50) NULL,
-	[Frozenstatus] [varchar](50) NULL,
-	[refCode] [varchar](50) NULL,
- CONSTRAINT [PK_oSdorgCreditLog] PRIMARY KEY NONCLUSTERED 
-(
-	[ID] ASC
-)WITH (PAD_INDEX  = OFF, STATISTICS_NORECOMPUTE  = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS  = ON, ALLOW_PAGE_LOCKS  = ON) ON [PRIMARY]
-) ON [PRIMARY]
-
-GO
-
-SET ANSI_PADDING OFF
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_OverRunLimit]  DEFAULT ((0)) FOR [OverRunLimit]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_CreditAmount]  DEFAULT ((0)) FOR [CreditAmount]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_Table_1_FrozenLimit]  DEFAULT ((0)) FOR [FrozenAmount]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_ChangeFrozenAmount]  DEFAULT ((0)) FOR [ChangeFrozenAmount]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_ChangeAmount]  DEFAULT ((0)) FOR [ChangeCredit]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_Commission]  DEFAULT ((0)) FOR [Commission]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_Rewards]  DEFAULT ((0)) FOR [Rewards]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_Balance]  DEFAULT ((0)) FOR [Balance]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_AvailabBalance]  DEFAULT ((0)) FOR [AvailabBalance]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_APPName]  DEFAULT (app_name()) FOR [APPName]
-GO
-
-ALTER TABLE [dbo].[oSdorgCreditLog] ADD  CONSTRAINT [DF_oSdorgCreditLog_sUserName]  DEFAULT (suser_name()) FOR [sUserName]
-GO
-
-
-
-
-*/

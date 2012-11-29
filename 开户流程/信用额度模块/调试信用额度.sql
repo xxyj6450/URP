@@ -1,11 +1,7 @@
  select totalmoney2, uo.commission, uo.doccode ,old,uo.NetType,uo.ComboCode,uo.ComboName, ch.Price,uo.PackageID
  from Unicom_Orders_2 uo inner join Combo_H ch on uo.ComboCode=ch.ComboCode
- where uo.doccode='RS20121026001421'
-
-begin tran
+ where uo.doccode='RS20121027003662'
  
-select * from strategy_dt where doccode='CLS2012081100001' AND Filter like '%TBD2012092200040%'
-select * from log_Strategy_HD where doccode='CLS2012081100001' order by EventTime desc
 
 declare @ICCID varchar(20),@Seriescode varchar(50),@Doccode varchar(20),
 @FormID int,@tips varchar(max),@Commission money,@sdorgid varchar(50),
@@ -14,7 +10,7 @@ declare @ICCID varchar(20),@Seriescode varchar(50),@Doccode varchar(20),
 
 select @Doccode=uo.DocCode,@FormID=uo.FormID,@Seriescode=uo.SeriesCode,@ICCID=uo.ICCID
 from Unicom_Orders uo
-where uo.DocCode='RS20121026001421'
+where uo.DocCode='RS20121027003662'
 
   Begin Tran  
   exec sp_ExecuteExpression @FormID,@Doccode,'',@Totalmoney2 out
