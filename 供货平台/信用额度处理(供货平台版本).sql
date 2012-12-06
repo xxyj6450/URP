@@ -46,10 +46,11 @@
 	9.2 若流程不存在,则将源单据流程改成"已处理"
 
 begin tran
-exec [sp_UpdateCredit] 4950,'JDC2012112300546','2.1.769.06.12',1,'1'
+exec [sp_UpdateCredit] 4950,'JDC2012112900026','2.1.769.01.02',1,'1'
 rollback
+
 begin tran
-exec [sp_UpdateCredit] 9237,'RS20121126000001','2.1.769.09.29',1,'1'
+exec [sp_UpdateCredit] 9237,'JDC2012113000000','2.1.769.09.29',1,'1'
 
 select * from oSDOrgCreditlog osc where osc.Doccode='DD20120924000020' order by osc.Docdate desc
 select * from osdorgcredit where sdorgid='2.020.426'
@@ -583,9 +584,10 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		--流程状态控制
 		IF @FlowExists=1 AND ISNULL(@FlowStatus,'未完成')='已完成'
 			BEGIN
-				RAISERROR('本流程已处理结束,禁止继续操作.',16,1)
+				RAISERROR('流程[%s]已解冻的额度达到冻结额度,流程结束,禁止继续操作.',16,1,@flowinstanceid)
 				return
 			END
+			 
 /******************************************************统一更新信用额度信息******************************************************/
 			--保证在分布式环境中事务可用.
 			set xact_abort on
@@ -676,7 +678,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						
 					END
 				--插入更新记录
-				
+				 
 				/*
 				insert into oSdorgCreditLog( Doccode, FormID, FormType, Docdate, DocType, 
 					   Account, [Event], SDorgID, SDorgName, OverRunLimit, 
@@ -707,7 +709,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						--若非起始节点的待处理,则修改已处理额度.
 						 if isnull(@StartFlow,0)=0 AND ISNULL(@FlowExists,0)=1
 							BEGIN
-								SET @sql = '			update Openquery(URP11,''SELECT ProcessedAmount From JTURP.dbo.oSDOrgCreditFlow a Where FlowInstanceID='''''+isnull(@FlowInstanceID,'')+''''' AND )' + char(10)
+								SET @sql = '			update Openquery(URP11,''SELECT ProcessedAmount From JTURP.dbo.oSDOrgCreditFlow a Where FlowInstanceID='''''+isnull(@FlowInstanceID,'')+'''''   )' + char(10)
 									 + '				set    ProcessedAmount  = isnull(ProcessedAmount,0) - isnull(@ChangeFrozenAmount,0), ' + char(10)
 									 + '					   ModifyDate = getdate(), ' + char(10)
 									 + '					   ModifyUser = @Usercode, ' + char(10)
@@ -747,10 +749,11 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 								where a.flowInstanceID=@FlowInstanceID
 							end
 					END
+					 
 				--当有原始单号,且冻结状态处理完毕时,更新原冻结额度状态
 				if  isnull(@SourceDoccode,'')!='' and @FrozenStatus = '已处理'
 				Begin
-					If  @Formid In(9102,9146,9237,6090,9167,9244,9267)
+					If  @Formid In(9102,9146,9237,6090,9167,9244,9267,4950)
 						BEGIN
 							/*Update Openquery(URP11,'Select frozenstatus,Refcode From oSdorgCreditLog  where  Doccode  ='''+ @SourceDoccode+'''and frozenStatus  = ''待处理''')
 							set    frozenstatus      = @FrozenStatus,
@@ -797,7 +800,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 										   and frozenStatus  = '待处理'
 								END
 						END
-				end
+				END
+				 
 				--当外部无事务时,则前面的代码启动了事物,需要提交之.
 				if @TranCount =0 commit
 			end try
