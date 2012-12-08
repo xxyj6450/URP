@@ -339,7 +339,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--分货取额度
 				 if @OptionID IN('','1')
 					BEGIN
-						select @ChangeFrozenAmount=-@ChangeAmount,@Event='分货处理额度.',@FrozenStatus='待处理'
+						select @ChangeFrozenAmount=-@ChangeAmount,@Event='分货处理额度.',@FrozenStatus='已处理'
 					END
 				--若操作类型不存在,则抛出异常,防止非法操作
 				else
