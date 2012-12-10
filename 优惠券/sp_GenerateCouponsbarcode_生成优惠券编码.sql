@@ -105,7 +105,6 @@ AS
 			BEGIN
 				SELECT @StartNum=@Basedigit+@StartNum
 			END
-		 PRINT @StartNum
 		--清除原有数据
 		IF ISNULL(@ReserverDoc,0)=0 AND @Doccode!='' 		DELETE FROM Coupons_D WHERE Doccode=@Doccode
 		--下面开始生成数据
