@@ -46,12 +46,16 @@
 	9.2 若流程不存在,则将源单据流程改成"已处理"
 
 begin tran
-exec [sp_UpdateCredit] 4950,'JDC2012112900026','2.1.769.01.02',1,'1'
+exec [sp_UpdateCredit] 6090,'DD20121214000000','2.1.755.61.66',1,'2'
 rollback
 
 begin tran
 exec [sp_UpdateCredit] 9237,'JDC2012113000000','2.1.769.09.29',1,'1'
 
+ 
+BEGIN tran
+	EXEC  sp_UpdateCredit 6052,'DTZ2012121700006','2.1.769.02.23',0,'2','发货中止,取消额度冻结.'
+	
 select * from oSDOrgCreditlog osc where osc.Doccode='DD20120924000020' order by osc.Docdate desc
 select * from osdorgcredit where sdorgid='2.020.426'
 */
@@ -513,8 +517,9 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				return
 			END
 		---------------------------------------------------------------取出信用额度信息---------------------------------------------------------
+ 
 		--分布式查询采用动态SQL方式
-		If @Formid In(9102,9146,9237,6090,9167,9244,9267)
+		If @Formid In(9102,9146,9237,6090,9167,9244,9267,6052)
 			Begin
 				SET @sql = 'select @AvailabBalance=ISNULL(AvailableBalance,0),@OverRunLimit=ISNULL(OverrunLimit,0),@FrozenAmount= ISNULL(FrozenAmount,0), ' + char(10)
 				 + '				@Balance=isnull(Balance,0) ' + char(10)
@@ -525,6 +530,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				Exec sp_executesql @sql,N'@AvailabBalance money output,@OverRunLimit money output,@FrozenAmount money output,@Balance money output',
 				@AvailabBalance=@AvailabBalance Output,@OverRunLimit=@OverRunLimit Output,@FrozenAmount=@FrozenAmount Output,@Balance=@Balance output
 				select @Rowcount=@@ROWCOUNT
+ 
 				--若非启动流程,则取出已有流程的信息,并标志流程是否存在.
 				if isnull(@StartFlow,0)=0 AND isnull(@FlowInstanceID,'')<>''
 					BEGIN
@@ -536,6 +542,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						@FlowFrozenAmount=@FlowFrozenAmount Output,@FlowUnFrozenAmount=@FlowUnFrozenAmount OUTPUT,@FlowStatus=@FlowStatus output
 						SELECT @FlowExists=CASE WHEN @@ROWCOUNT=0 THEN 0 ELSE 1 end
 					END
+ 
 			End
 		Else
 			--非分布式操作本地直接完成即可.
@@ -596,8 +603,9 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 			if @TranCount=0	begin tran
 			begin try
 				--更新信用额度
+ 
 				--分布式更新需要采用动态SQL方式更新
-				If @Formid In(9102,9146,6090,9167,9244,9267)
+				If @Formid In(9102,9146,6090,9167,9244,9267,6052)
 					BEGIN
 						SET @sql = '	update Openquery(URP11,''SELECT FrozenAmount,Balance,ModifyDate,ModifyUser,terminalID,ModifyDoccode '+CHAR(10)
 						 + '				From JTURP.dbo.oSDOrgCredit a Where SDOrgID='''''+isnull(@AccountSdorgid,'')+''''' AND Account=''''113107'''''')' + char(10)
@@ -612,6 +620,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,
 						@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid
 						SELECT @Rowcount=@@ROWCOUNT
+ 
 						--若起始流程,则插入一条记录.
 						if @StartFlow=1
 							BEGIN
@@ -691,7 +700,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 					   @Refcode
 				from   @table a
 				*/
-				If @Formid In(9102,9146,9237,6090,9167,9244,9267)
+ 
+				If @Formid In(9102,9146,9237,6090,9167,9244,9267,6052)
 					BEGIN
 						Insert into Openquery(URP11,'Select   Doccode, FormID, FormType, Docdate, DocType, 
 						   Account, [Event], SDorgID, SDorgName, OverRunLimit, 
@@ -706,15 +716,17 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 										else @FrozenStatus
 								end, 
 							   @Refcode,@AccountSdorgid,@FlowInstanceID
+ 
 						--若非起始节点的待处理,则修改已处理额度.
 						 if isnull(@StartFlow,0)=0 AND ISNULL(@FlowExists,0)=1
 							BEGIN
-								SET @sql = '			update Openquery(URP11,''SELECT ProcessedAmount From JTURP.dbo.oSDOrgCreditFlow a Where FlowInstanceID='''''+isnull(@FlowInstanceID,'')+'''''   )' + char(10)
+								SET @sql = '			update Openquery(URP11,''SELECT ProcessedAmount,ModifyDate,ModifyUser,terminalID,ModifyDoccode,FlowStatus,FrozenAmount From JTURP.dbo.oSDOrgCreditFlow a Where FlowInstanceID='''''+isnull(@FlowInstanceID,'')+'''''''   )' + char(10)
 									 + '				set    ProcessedAmount  = isnull(ProcessedAmount,0) - isnull(@ChangeFrozenAmount,0), ' + char(10)
+									 +'				FlowStatus=CASE WHEN isnull(ProcessedAmount,0) - isnull(@ChangeFrozenAmount,0)>=ISNULL(FrozenAmount,0) THEN ''已完成'' else isnull(FlowStatus,''未完成'') end,' +char(10)
 									 + '					   ModifyDate = getdate(), ' + char(10)
 									 + '					   ModifyUser = @Usercode, ' + char(10)
 									 + '					   terminalID=@TerminalID, ' + char(10)
-									 + '					   ModifyDoccode = @Doccode'
+									 + '					   ModifyDoccode= @Doccode'
 									Exec sp_executesql @sql,N'@ChangeFrozenAmount money,@ChangeCredit money, @Usercode varchar(50),@TerminalID varchar(50),@Doccode varchar(50),@AccountSdorgid varchar(50)',
 									@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,
 									@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid 
@@ -749,11 +761,11 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 								where a.flowInstanceID=@FlowInstanceID
 							end
 					END
-					 
+ 
 				--当有原始单号,且冻结状态处理完毕时,更新原冻结额度状态
 				if  isnull(@SourceDoccode,'')!='' and @FrozenStatus = '已处理'
 				Begin
-					If  @Formid In(9102,9146,9237,6090,9167,9244,9267,4950)
+					If  @Formid In(9102,9146,9237,6090,9167,9244,9267,4950,6093,6052)
 						BEGIN
 							/*Update Openquery(URP11,'Select frozenstatus,Refcode From oSdorgCreditLog  where  Doccode  ='''+ @SourceDoccode+'''and frozenStatus  = ''待处理''')
 							set    frozenstatus      = @FrozenStatus,
@@ -806,7 +818,9 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				if @TranCount =0 commit
 			end try
 			begin catch
+
 				if @TranCount=0 and @@TRANCOUNT>0  rollback
+				
 				select @tips=dbo.getLastError('更新信用额度失败!' )
 				raiserror(@tips,16,1)
 				return
