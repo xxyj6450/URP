@@ -15,7 +15,7 @@ select * from icoupons where couponscode='1007'
  select  top 10 * from numbers
 rollback 
 */
-create PROC sp_ExeucteStrategyOnPostDoc
+alter PROC sp_ExeucteStrategyOnPostDoc
 	@Formid INT,
 	@Doccode VARCHAR(50),
 	@OptionId VARCHAR(50)='',

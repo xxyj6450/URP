@@ -781,6 +781,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 									--Print @sql
 									Exec sp_executesql @sql,N'@SourceDoccode varchar(30),@FrozenStatus varchar(20),@Doccode varchar(50)',
 									@SourceDoccode=@SourceDoccode,@FrozenStatus=@FrozenStatus,@Doccode=@Doccode
+									--若流程已结束,则尝试将未使用的优惠券还原.
+									exec URP11.JTURP.dbo.sp_UpdateCouponsFlow @Formid,@Doccode,@FlowInstanceID,'已完成','',@Usercode,@terminalid
 								END
 							IF ISNULL(@FlowExists,0)=0
 								BEGIN
@@ -791,6 +793,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 									--Print @sql
 									Exec sp_executesql @sql,N'@SourceDoccode varchar(30),@FrozenStatus varchar(20),@Doccode varchar(50)',
 									@SourceDoccode=@SourceDoccode,@FrozenStatus=@FrozenStatus,@Doccode=@Doccode
+									
 								END
 						End
 					Else
@@ -802,6 +805,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 										   Refcode           = @SourceDoccode
 									WHERE FlowInstanceID=@FlowInstanceID
 										   and frozenStatus  = '待处理'
+									--若流程已结束,则尝试将未使用的优惠券还原.
+									exec sp_UpdateCouponsFlow @Formid,@Doccode,@FlowInstanceID,'已完成','',@Usercode,@terminalid
 								END
 							IF ISNULL(@FlowExists,0)=0
 								BEGIN

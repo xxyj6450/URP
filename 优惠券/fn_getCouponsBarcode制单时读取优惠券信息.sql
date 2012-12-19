@@ -1,4 +1,4 @@
-CREATE FUNCTION [dbo].[fn_getCouponsBarcode](
+alter FUNCTION [dbo].[fn_getCouponsBarcode](
 	@stcode VARCHAR(20),					--≤÷ø‚
 	@matcode VARCHAR(20),					--…Ã∆∑
 	@matgroup VARCHAR(20),
@@ -33,7 +33,7 @@ RETURNS @table TABLE(
 	ReturnDate DATETIME,
 	valid BIT,
 	validDate DATETIME,
-	Remark	VARCHAR(50) 
+	Remark	VARCHAR(500) 
 	)
 AS
 	BEGIN

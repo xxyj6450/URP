@@ -8,7 +8,7 @@
 * begin tran exec sp_createcouponsdoc 2419,'RE20110725000736',9201,0 rollback
 * select * from coupons_d where doccode='QTH2011051000002'
 */
-ALTER PROC [dbo].[sp_CreateAUTOCouponsDoc]
+alter PROC [dbo].[sp_CreateAUTOCouponsDoc]
 	@FormID	INT,
 	@doccode VARCHAR(20),
 	@optionID	INT=9201,
