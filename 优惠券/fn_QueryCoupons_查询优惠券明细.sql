@@ -49,13 +49,14 @@ AS
 		FROM iCoupons i with(nolock)
 		inner JOIN iCouponsGeneral c with(nolock) ON i.CouponsCode=c.CouponsCode
 		inner JOIN gCouponsGroup d with(nolock) ON c.GroupCode=d.GroupCode
-		LEFT JOIN oStorage b with(nolock) ON i.stCode=b.stCode
+		LEFT JOIN oStorage b with(nolock) ON i.stCode=b.stCode 
 		WHERE   (@stcode='' OR b.stCode=@stcode)
 		AND (@CouponsCode='' OR i.CouponsCode=@CouponsCode)
 		AND (@CouponsBarcode='' OR i.CouponsBarcode=@CouponsBarcode)
 		AND (@CouponsGroup='' OR d.GroupCode LIKE @CouponsGroup +'%')
 		AND (@state='' OR i.[State]=@state)
-		and (@CouponsOwner='' or c.CouponsOWNER=@CouponsOwner)
+		asnd (@CouponsOwner='' or c.CouponsOWNER=@CouponsOwner)
 		and (@Owner='' or i.CouponsOWNER=@Owner)
+ 
 		return
 	END

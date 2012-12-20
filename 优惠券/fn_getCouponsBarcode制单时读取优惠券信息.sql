@@ -1,3 +1,8 @@
+/*
+* 
+select * from dbo.fn_getCouponsBarcode('2.1.791.02.17','1.007.1.1.1','MATGROUP','','','ÒÑÔù','','1')
+select * from icoupons
+*/
 alter FUNCTION [dbo].[fn_getCouponsBarcode](
 	@stcode VARCHAR(20),					--²Ö¿â
 	@matcode VARCHAR(20),					--ÉÌÆ·
@@ -75,7 +80,7 @@ AS
 				and isnull(i.Valid,1)=1
 				AND ((ISNULL(c.BeginDate,'')='' OR c.BeginDate<=GETDATE()) and(isnull(i.beginValidDate,'')='' or i.beginValidDate<=getdate()))
 				AND ((ISNULL(c.EndDate,'')='' OR c.EndDate>=GETDATE()) and isnull(i.ValidDate,'')='' or i.ValidDate>=getdate())
-				
+				 
 			END
 
 		return
