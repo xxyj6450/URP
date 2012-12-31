@@ -350,11 +350,11 @@ as
 							return
 						END
 					--操作完毕回填事务
-					if @TRANCOUNT=0 commit
+					if @TRANCOUNT=0 and xact_state() =1 commit
 			END TRY
 			begin catch
  
-				if @TRANCOUNT=0 and xact_state()!=-1 rollback
+				if  xact_state() =-1 rollback
 				select @tips=dbo.getLastError('收货发生异常.')
 				raiserror(@tips,16,1)
 				return

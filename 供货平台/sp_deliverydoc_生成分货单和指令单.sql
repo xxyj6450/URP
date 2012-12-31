@@ -40,7 +40,7 @@ as
 		inner join  _sysInstances si on ss.InstanceID=si.InstanceID
 		where a.FormID=@FormID
 		and a.DocCode=@Doccode
-		and isnull(b.deliverdigt1,0)>0
+		--and isnull(b.deliverdigt1,0)>0
 		and isnull(a.phflag,'')='未处理'
 		--检查分货状态
 		if @@ROWCOUNT=0
@@ -142,12 +142,12 @@ as
 				--处理信用额度
 				--exec sp_UpdateCredit @FormID,@Doccode,@SDorgid,1,'1','分货处理额度.'
 				--exec [sp_UpdateCredit] 6093,'GFH2012112300166','2.1.769.06.12',1,'1'
-				if @trancount =0 commit
+				if xact_state()=1 and @trancount =0 commit
 			end try
 			begin catch
 				select @tips='分货发生异常.'+dbo.crlf()+isnull(error_message(),'')+dbo.crlf()+'异常发生于'+isnull(error_procedure(),'')+'第'+convert(varchar(10),isnull(error_line(),0))+'行'
  
-				if @trancount=0 and @@TRANCOUNT>0 and xact_state()<>-1 rollback
+				if  @@trancount>0 rollback
 				raiserror(@tips,16,1)
 				return
 			end catch
