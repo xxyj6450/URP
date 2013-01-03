@@ -1,9 +1,12 @@
 /*
 begin tran
-exec sp_AggregateOrders 4483,'HZCG201212250006','2012-12-20','2012-12-26','2'
+exec sp_AggregateOrders 4483,'HZCG201301030046','2013-01-02','2013-01-02','2'
 rollback
 commit
-
+begin tran
+exec sp_AggregateOrders 1509,'CR20121231000006','2012-12-31','2012-12-31','2'
+rollback
+commit
 select * from T_AggregateResult tar with(nolock)
 
 */
@@ -35,14 +38,14 @@ as
 							--再重新生成汇总
 							select @sql='insert into T_AggregatedDoc(Doccode,FormID,RefFormID,RefDoccode,EnterDate,InstanceID)'+char(10)+
 							'select os.doccode,os.formid,@FormID,@Doccode,getdate(),os.instanceid'+char(10)+
-							'from openquery(GHPT62,''Select Doccode,FormID,InstanceID From URPDB01.dbo.ord_shopbestgoodsdoc os'+char(10)+
+							'from openquery(GHPT62,''Select Doccode,FormID,InstanceID From GHPTSUB.dbo.ord_shopbestgoodsdoc os'+char(10)+
 							' Where os.Purchase=1'+char(10)+
 							' and os.phflag=''''未处理'''''+char(10)+
 							' and os.DocDate between ''''' +convert(varchar(10),@BeginDate,120) +''''' And '''''+ convert(varchar(10),@EndDate,120)+''''''+char(10)+
 							' and os.DocStatus=100'+char(10)+
 							' and os.formid=6090'') os'+char(10)+
 							' Where not exists(select 1 from T_AggregateResult tar with(nolock) where os.DocCode=tar.Doccode)'
-							--print @sql
+							print @sql
 							exec sp_executesql @sql,N'@FormID int,@Doccode varchar(20)',@FormID=@FormID,@Doccode=@Doccode
 							if @@ROWCOUNT=0
 								BEGIN
@@ -58,7 +61,7 @@ as
 							--将汇总数据插入回单据
 							select @sql='insert into ppoitem(DocItem,rowid,doccode,MatCode,matname,Digit,userdigit3)'+char(10)+
 							'select row_number() over(order by (select 1)),newid(),'''+@Doccode+''' ,os2.matcode,os2.matname,os2.ask_digit,os2.ask_digit'+char(10)+
-							'from Openquery(GHPT62,''Select os2.matcode,os2.matname,sum(isnull(ask_digit,0)) as ask_digit From URPDB01.dbo.ord_shopbestgoodsdtl os2,URPDB01.dbo.iMatGeneral img'+char(10)+
+							'from Openquery(GHPT62,''Select os2.matcode,os2.matname,sum(isnull(ask_digit,0)) as ask_digit From GHPTSUB.dbo.ord_shopbestgoodsdtl os2,GHPTSUB.dbo.iMatGeneral img'+char(10)+
 							'where os2.DocCode in(' +@sql_Doccode +')'+char(10)+
 							'and os2.matcode=img.MatCode'+char(10)+
 							'and img.PurchaseFlag=1'+char(10)+
@@ -94,6 +97,17 @@ as
 					BEGIN
 						--取出供应商
 						select @vndCode=vndcode from ppohd p with(nolock) where p.DocCode=@Doccode
+						select @msg=''
+						--检查单据中是否有商品尚未报价
+						select @msg=@msg+'第'+convert(varchar(10),p.docitem)+'行商品['+p.matname+']尚未报价,无法汇总采购,请先报价后再操作.'+dbo.crlf()
+						From ppoitem p with(nolock)
+						where p.DocCode=@Doccode
+						and not exists(select 1 from sMatStorage_VND s with(nolock) where s.Matcode=p.MatCode and s.vndCode=@vndCode)
+						if @@ROWCOUNT>0
+							BEGIN
+								raiserror(@msg,16,1)
+								return
+							END
 						--取出供应商税率
 						select @taxRate= pvg.taxrate from pVndGeneral pvg with(nolock)
 						exec sp_newdoccode 4401,'',@newdoccode output
@@ -122,11 +136,10 @@ as
 								select tad.Doccode,tad.FormID,tad.RefFormID,tad.RefDoccode,tad.EnterDate,0,tad.InstanceID,@NewDoccode,dbo.InstanceID()
 								from T_AggregatedDoc tad with(nolock)
 								where tad.RefDoccode=@Doccode
-							if xact_state()=1 	commit					
+							 	commit					
 						END TRY
 						BEGIN CATCH
-							if xact_state()=-1 	rollback
-							if xact_state()=1 	commit	 
+							 if @@trancount>0 rollback
 							select @msg=dbo.getLastError('生成采购订单失败,请重试.')
 							raiserror(@msg,16,1)
 							return
@@ -140,6 +153,7 @@ as
 				--取出订单
 				select @refcode=refCode from imatdoc_h with(nolock) where DocCode=@Doccode
 				if isnull(@Refcode,'')='' return 
+				set XACT_ABORT on
 				begin tran
 				begin try
 					--游标遍历各服务器上订货单,并取消其采购流程标志
@@ -187,9 +201,11 @@ as
 									/*Update OpenQuery(@ServerName,'Select Purchase From  '+@ServerName +'.dbo.ord_shopbestgoodsdoc Where Doccode in('+@sql_Doccode+')')
 									Set PurChase=1
 									*/
-									SET @sql = 'Update OpenQuery('+@ServerName+',''Select Purchase From  '+@ServerName +'.dbo.ord_shopbestgoodsdoc Where Doccode in('+@sql_Doccode+')'') ' + char(10)
+									SET @sql = 'Update OpenQuery('+@ServerName+',''Select Purchase From  '+@DBName +'.dbo.ord_shopbestgoodsdoc Where Doccode in('+@sql_Doccode+')'') ' + char(10)
 											 + '								Set PurChase=1'
+									print @sql
 									EXEC(@sql)
+									print @sql
 									--再更新状态值
 									update tar
 										set tar.PurchaseOrderDoccode = @Doccode,
@@ -201,6 +217,7 @@ as
 								END
 							else	---若订单在本机,则报个错.
 								BEGIN
+ 
 									raiserror('咦,怎么订单在本机呢?不太正常哦,赶紧联系系统管理员!',16,1)
 									return
 								END
@@ -211,7 +228,7 @@ as
 					commit
 				end try
 				begin catch
-					if @@TRANCOUNT>0 rollback
+					--if @@TRANCOUNT>0 rollback
 					select @msg=dbo.getLastError('通知订货申请单异常.')
 					raiserror(@msg,16,1)
 					return

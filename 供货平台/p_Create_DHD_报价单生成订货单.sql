@@ -52,6 +52,7 @@ AS
 		,cte1(id,id1,data) as(
 		select a.id,row_number() OVER (partition by a.id order by (select 1)) as id1,s2.List 
 		  from cte a outer APPLY commondb.dbo.SPLIT(a.data,',') s2
+		where a.data<>''
 		)
 		--再合并成需要的结果集
 		,cte2(id,matcode,digit,stock,Price) as (
@@ -83,7 +84,7 @@ AS
 				return
 			END
 		--校验订货数量
-		if exists(select 1 from @dhdtable where isnull(digit,0)=0)
+		if exists(select 1 from @dhdtable where isnull(digit,0)<=0)
 			BEGIN
 				select @msg='订单数量异常,无法继续,,请联系系统管理员.' + dbo.crlf() +@mat
 				raiserror(@msg,16,1)
@@ -125,6 +126,7 @@ AS
 				raiserror(@msg,16,1)
 				return
 			END
+		begin tran
 		begin try
 			--生成非采购流程订单
 			if exists(select 1 from @dhdtable where isnull(PurchaseFlag,0)=0)
@@ -180,8 +182,10 @@ AS
 					exec check_order @newdoccode
 					exec sp_UpdateCredit 6090,@newDoccode,@SDOrgID,1,'','',@Usercode,''
 				END
+				commit
 		end try
 		begin catch
+			rollback
 			select @msg=dbo.getLastError('生成订货单失败.')
 			raiserror(@msg,16,1)
 			return

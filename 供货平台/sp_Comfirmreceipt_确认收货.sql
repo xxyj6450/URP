@@ -16,7 +16,7 @@
 	回填送货单收货状态.
 示例:
 begin tran
-exec sp_ComfirmReceipt 'JDC2012121700326',4950,'SYSTEM','2.1.755.61.12','D101.01','','1243010B-4C4E-40FE-AAC5-B3AD367AA74D','1',''
+exec sp_ComfirmReceipt 'JDC2012121200466',4950,'SYSTEM','2.1.791.03.44','D109.01','','1243010B-4C4E-40FE-AAC5-B3AD367AA74D','1',''
  
  update iseries
 	set state='送货'
@@ -24,7 +24,7 @@ exec sp_ComfirmReceipt 'JDC2012121700326',4950,'SYSTEM','2.1.755.61.12','D101.01
  rollback
  set xact_abort on
  begin tran
-exec sp_ComfirmReceipt 'JDC2012121802580',4950,'SYSTEM','2.1.020.09.05','001.020','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
+exec sp_ComfirmReceipt 'JDC2013010100460',4950,'SYSTEM','2.1.020.09.05','001.020','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
 
 begin tran
 exec sp_ComfirmReceipt 'JDC2012121500460',4950,'SYSTEM','2.1.791.03.25','111.769','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
@@ -180,8 +180,10 @@ as
 						set getok='已收货',
 						getday=convert(varchar(30),getdate(),120),
 						getname = @Usercode
+						
 					where DocCode=@Doccode
 					and isnull(getok,'未收货')='未收货'
+					and DocStatus<>0
 					if @@ROWCOUNT=0
 						BEGIN
 							raiserror('找不到送货单或送货单不在可收货状态,请核实此单是否已发货,若有疑问请联系当地总仓.',16,1)
@@ -214,7 +216,7 @@ as
 					select @sql='Update Openquery('+@ServerName+',''Select getok,getday,getname,doccode From '+dbo.crlf()+
 					@DatabaseName+'.dbo.spickorderhd '+dbo.crlf()+
 					' where DocCode='''''+@Doccode+''''''+dbo.crlf()+
-					' and isnull(getok,''''未收货'''')=''''未收货'''''')'+dbo.crlf()+
+					' And Docstatus<>0 and isnull(getok,''''未收货'''')=''''未收货'''''')'+dbo.crlf()+
 					' set getok=''已收货'','+dbo.crlf()+
 					'	getday=convert(varchar(30),getdate(),120),'+dbo.crlf()+
 					'	getname = '''+@Usercode+''''+dbo.crlf()
@@ -350,11 +352,10 @@ as
 							return
 						END
 					--操作完毕回填事务
-					if @TRANCOUNT=0 and xact_state() =1 commit
+					if @TRANCOUNT=0  commit
 			END TRY
 			begin catch
- 
-				if  xact_state() =-1 rollback
+				if @trancount=0 and @@TRANCOUNT>0 rollback
 				select @tips=dbo.getLastError('收货发生异常.')
 				raiserror(@tips,16,1)
 				return
