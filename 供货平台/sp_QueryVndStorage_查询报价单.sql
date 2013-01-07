@@ -54,7 +54,7 @@ as
 		  from oSDOrg os with(nolock) where os.SDOrgID=@SDorgID
 		--取出前5000行
 		Insert Into #MatInfo 
-		select top 5000 img.MatCode,img.matname,img.MatGroup,0 as stock,convert(money,0.00) as Price,isnull(img.PurchaseFlag,0) as PurchaseFlag,img.HotLevel
+		select top 5000 img.MatCode,img.matname,img.MatGroup,0 as stock,convert(money,0.00) as Price,isnull(img.PurchaseFlag,0) as PurchaseFlag,isnull(img.HotLevel,0)
 		From iMatGeneral img with(nolock) --inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
 		--outer APPLY dbo.uf_salesSDOrgpricecalcu3(img.matcode,@SDorgID,'') uss
 		where (@MatName='' or  exists(select 1 from @keywords x where img.matname like '%'+x.data+'%' and x.data<>''))
@@ -87,7 +87,8 @@ as
 			set a.Stock=b.stock
 		from #MatInfo a inner join cte_Stock b with(nolock) on a.Matcode=b.matcode
 		--显示数据
-		Select Matcode,MatName,Matgroup,Stock  ,Price   From #MatInfo a with(nolock)
+		Select Matcode,MatName,Matgroup,Stock  ,Price,a.HotLevel  
+		  From #MatInfo a with(nolock)
 		where (isnull(@Minprice,0)=0 or  a.price>=@Minprice)
 		and (isnull(@maxPrice,0)=0 or  a.price<=@maxPrice)
 		and isnull(a.Stock,0)>0

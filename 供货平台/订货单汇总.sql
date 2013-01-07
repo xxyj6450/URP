@@ -4,12 +4,14 @@ exec sp_AggregateOrders 4483,'HZCG201301030046','2013-01-02','2013-01-02','2'
 rollback
 commit
 begin tran
-exec sp_AggregateOrders 1509,'CR20121231000006','2012-12-31','2012-12-31','2'
+exec sp_AggregateOrders 1509,'CR20130107000006','2012-12-31','2012-12-31','2'
 rollback
 commit
 select * from T_AggregateResult tar with(nolock)
-
+ select * from T_AggregateResult tar where tar.PurchaseOrderDoccode ='CG20130100000286'
+ select * from _sysInstances si where si.InstanceID='DE98658F-4487-4DDA-A1EB-1E5130371B0F'
 */
+
 alter proc sp_AggregateOrders
 	@FormID int,
 	@Doccode varchar(50),
@@ -38,7 +40,7 @@ as
 							--再重新生成汇总
 							select @sql='insert into T_AggregatedDoc(Doccode,FormID,RefFormID,RefDoccode,EnterDate,InstanceID)'+char(10)+
 							'select os.doccode,os.formid,@FormID,@Doccode,getdate(),os.instanceid'+char(10)+
-							'from openquery(GHPT62,''Select Doccode,FormID,InstanceID From GHPTSUB.dbo.ord_shopbestgoodsdoc os'+char(10)+
+							'from openquery(GHPT62,''Select Doccode,FormID,InstanceID From URPDB01.dbo.ord_shopbestgoodsdoc os'+char(10)+
 							' Where os.Purchase=1'+char(10)+
 							' and os.phflag=''''未处理'''''+char(10)+
 							' and os.DocDate between ''''' +convert(varchar(10),@BeginDate,120) +''''' And '''''+ convert(varchar(10),@EndDate,120)+''''''+char(10)+
@@ -61,7 +63,7 @@ as
 							--将汇总数据插入回单据
 							select @sql='insert into ppoitem(DocItem,rowid,doccode,MatCode,matname,Digit,userdigit3)'+char(10)+
 							'select row_number() over(order by (select 1)),newid(),'''+@Doccode+''' ,os2.matcode,os2.matname,os2.ask_digit,os2.ask_digit'+char(10)+
-							'from Openquery(GHPT62,''Select os2.matcode,os2.matname,sum(isnull(ask_digit,0)) as ask_digit From GHPTSUB.dbo.ord_shopbestgoodsdtl os2,GHPTSUB.dbo.iMatGeneral img'+char(10)+
+							'from Openquery(GHPT62,''Select os2.matcode,os2.matname,sum(isnull(ask_digit,0)) as ask_digit From URPDB01.dbo.ord_shopbestgoodsdtl os2,URPDB01.dbo.iMatGeneral img'+char(10)+
 							'where os2.DocCode in(' +@sql_Doccode +')'+char(10)+
 							'and os2.matcode=img.MatCode'+char(10)+
 							'and img.PurchaseFlag=1'+char(10)+
@@ -165,6 +167,7 @@ as
 					fetch next FROM cur_Doc into  @ordering_InstanceID 
 					while @@FETCH_STATUS=0
 						BEGIN
+							print @ordering_InstanceID
 							--判断是否来自本机
 							if @ordering_InstanceID<>dbo.InstanceID()
 								BEGIN
@@ -180,6 +183,8 @@ as
 									--分解得服务器与数据库名称
 									SELECT @ServerName=SUBSTRING(@AccessName,0,CHARINDEX('.',@AccessName))
 									SELECT @DBName=SUBSTRING(@AccessName,CHARINDEX('.',@AccessName)+1,50)
+									print @ServerName
+									print @DBName
 									if isnull(@ServerName,'')=''  
 										BEGIN
 											raiserror('服务器信息为空,无法更新订单,请联系系统管理员.',16,1)
@@ -202,18 +207,17 @@ as
 									Set PurChase=1
 									*/
 									SET @sql = 'Update OpenQuery('+@ServerName+',''Select Purchase From  '+@DBName +'.dbo.ord_shopbestgoodsdoc Where Doccode in('+@sql_Doccode+')'') ' + char(10)
-											 + '								Set PurChase=1'
+											 + '								Set PurChase=0'
 									print @sql
 									EXEC(@sql)
-									print @sql
 									--再更新状态值
 									update tar
-										set tar.PurchaseOrderDoccode = @Doccode,
-										tar.PurchaseOrderInstanceID=dbo.InstanceID(),
+										set tar.PurchaseDoccode = @Doccode,
+										tar.PurchaseInstanceID=dbo.InstanceID(),
 										tar.Status = 1
 									from T_AggregateResult tar with(nolock)
 									where tar.InstanceID=@Ordering_InstanceID
-									and tar.PurchaseDoccode=@Refcode
+									and tar.PurchaseOrderDoccode=@Refcode
 								END
 							else	---若订单在本机,则报个错.
 								BEGIN

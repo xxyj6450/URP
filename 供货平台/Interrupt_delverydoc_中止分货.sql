@@ -22,10 +22,10 @@ BEGIN
 			RAISERROR('当前指令单已处理,不允许中止发货.',16,1)
 			return
 		END
+	EXEC  sp_UpdateCredit 6052,@doccode,@sdorgid,0,'2','发货中止,取消额度冻结.'
 	UPDATE imatdoc_h SET Usetxt5='中止发货' WHERE DocCode=@doccode;
 
-	EXEC  sp_UpdateCredit 6052,@doccode,@sdorgid,0,'2','发货中止,取消额度冻结.'
-
+	
 	----结束
 	/*BEGIN tran
    EXEC  sp_UpdateCredit 6052,'DTZ2012112800146','2.1.769.09.29',0,'2','发货中止,取消额度冻结.'
