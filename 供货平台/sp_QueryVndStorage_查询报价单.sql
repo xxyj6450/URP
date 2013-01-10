@@ -8,7 +8,7 @@
 备注:
 示例:
 exec sp_QueryVndStorage '','诺基亚 电池','','2.1.020.32.25','','',''
- 
+ exec sp_QueryVndStorage '','','','2.1.020.01.01','','0','0' 
 */
 alter proc sp_QueryVndStorage
 	@Matcode varchar(50)='',				--商品编码
@@ -70,10 +70,12 @@ as
 		--更新库存
 		;with cte (matcode,stock) AS (
 			select matcode,im.unlimitStock
-			from iMatstorage im with(nolock)
+			from iMatstorage im with(nolock) inner join oStorage os with(nolock) on im.stcode=os.stcode
+			where os.mainmark=1
 			union all
-			select matcode,im.unlimitStock
-			from iMatstorage_URP im with(nolock)
+			select matcode,im.unlimitStock 
+			from iMatstorage_URP im with(nolock) inner join oStorage os with(nolock) on im.stcode=os.stcode
+			where os.mainmark=1
 			union all
 			select matcode,im.Stock
 			from sMatStorage_VND  im with(nolock)
@@ -87,10 +89,11 @@ as
 			set a.Stock=b.stock
 		from #MatInfo a inner join cte_Stock b with(nolock) on a.Matcode=b.matcode
 		--显示数据
-		Select Matcode,MatName,Matgroup,Stock  ,Price,a.HotLevel  
+		Select Matcode,MatName,Matgroup,case when Stock>0 then '有' else '无' end as Stock  ,Price,a.HotLevel  
 		  From #MatInfo a with(nolock)
 		where (isnull(@Minprice,0)=0 or  a.price>=@Minprice)
 		and (isnull(@maxPrice,0)=0 or  a.price<=@maxPrice)
 		and isnull(a.Stock,0)>0
+		and isnull(a.Price,0)>0
 		order by a.HotLevel DESC, a.Matgroup
 	END
