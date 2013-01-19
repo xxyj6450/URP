@@ -6,7 +6,8 @@ alter PROCEDURE [dbo].[p_Create_DHD]
     @sdorgid VARCHAR(300) ,
     @mat VARCHAR(MAX),						--订单信息,格式如下matcode,digit,stock,price;matcode,digit,stock,price;以分号分行,以逗号分隔信息
     @Usercode varchar(50)='',
-    @UserName varchar(200)=''
+    @UserName varchar(200)='',
+    @Remark varchar(200)=''
 AS 
     BEGIN
     	set NOCOUNT ON;
@@ -142,7 +143,7 @@ AS
 						sttypeid,sales_mode,cltcode,cltname,stcode,stname,pcompanyid,purchase)
 					select @NewDoccode,convert(varchar(10),getdate(),120),6090,100,@CompanyID,@sdorgid,@SDorgName,
 					@UserName,convert(varchar(20),getdate(),120),@UserName,convert(varchar(20),getdate(),120),@UserName,convert(varchar(20),getdate(),120),
-					'未处理',@totalmoney,'总部订货申请单',convert(varchar(10),getdate()+1,120),@ps_stcode,@ps_stname,NULL as usertxt3,
+					'未处理',@totalmoney,'总部订货申请单',convert(varchar(10),getdate()+1,120),@ps_stcode,@ps_stname,@Remark as usertxt3,
 					@dptType,'紧急销售模式',@parentSDorgID,@ParentSDorgName,@stcode,@stname,NULL,0
 					--生成单据明细
 					insert into ord_shopbestgoodsdtl(
@@ -169,7 +170,7 @@ AS
 						sttypeid,sales_mode,cltcode,cltname,stcode,stname,pcompanyid,purchase)
 					select @NewDoccode,convert(varchar(10),getdate(),120),6090,100,@CompanyID,@sdorgid,@SDorgName,
 					@UserName,convert(varchar(20),getdate(),120),@UserName,convert(varchar(20),getdate(),120),@UserName,convert(varchar(20),getdate(),120),
-					'未处理',@totalmoney,'总部订货申请单',convert(varchar(10),getdate()+1,120),@ps_stcode,@ps_stname,NULL as usertxt3,
+					'未处理',@totalmoney,'总部订货申请单',convert(varchar(10),getdate()+1,120),@ps_stcode,@ps_stname,@remark as usertxt3,
 					@dptType,'紧急销售模式',@parentSDorgID,@ParentSDorgName,@stcode,@stname,NULL,1
 					--生成单据明细
 					insert into ord_shopbestgoodsdtl(

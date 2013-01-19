@@ -16,11 +16,12 @@
 */
  
 alter PROC [dbo].[sp_GenerateCouponsbarcode]
-	@CouponsCode VARCHAR(50),				--待生成编码的优惠券
+	@CouponsCode VARCHAR(50),			--待生成编码的优惠券
 	@Doccode VARCHAR(20),					--数据将插入的单号
 	@GenerateCount INT=100,					--生成的数量
-	@Basedigit INT=0,						--起始序号,若为0,则从当前的最大值开始,否则从此序号开始
-	@ReserverDoc BIT=1							--是否保持单据原有内容
+	@Basedigit INT=0,								--起始序号,若为0,则从当前的最大值开始,否则从此序号开始
+	@ReserverDoc BIT=1,						--是否保持单据原有内容
+	@RowID varchar(50)=''						--生成优惠券对应的业务单据唯一行标志			
 AS
 	BEGIN
 		SET NOCOUNT ON;
@@ -118,8 +119,8 @@ AS
 					END
 				IF @Doccode='' AND OBJECT_ID('tempdb.dbo.#Couponsbarcode') IS NOT NULL
 					BEGIN
-						INSERT INTO #Couponsbarcode(CouponsBarCode,CouponsCode,CouponsName)
-						SELECT  upper(@Prefix)+CONVERT(VARCHAR(8),@MaxDate,112)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-9)+
+						INSERT INTO #Couponsbarcode(RowID,CouponsBarCode,CouponsCode,CouponsName)
+						SELECT  @RowID ,upper(@Prefix)+CONVERT(VARCHAR(8),@MaxDate,112)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-9)+
 						dbo.fn_getcheckcode(CONVERT(VARCHAR(8),@MaxDate,112)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-9),'LUHN'),
 						@CouponsCode,@CouponsName
 						FROM Numbers n WITH(NOLOCK)
@@ -147,8 +148,8 @@ AS
 					END
 				IF @Doccode='' AND OBJECT_ID('tempdb.dbo.#Couponsbarcode') IS NOT NULL
 					BEGIN
-						INSERT INTO #Couponsbarcode(CouponsBarCode,CouponsCode,CouponsName)
-						SELECT  upper(@Prefix)+CONVERT(VARCHAR(8),@MaxDate,112)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-8),
+						INSERT INTO #Couponsbarcode(RowID,CouponsBarCode,CouponsCode,CouponsName)
+						SELECT @RowID, upper(@Prefix)+CONVERT(VARCHAR(8),@MaxDate,112)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-8),
 						@CouponsCode,@CouponsName
 						FROM Numbers n
 						WHERE digit BETWEEN @StartNum AND @StartNum+  @GenerateCount-1
@@ -174,8 +175,8 @@ AS
 					END
 				IF @Doccode='' AND OBJECT_ID('tempdb.dbo.#Couponsbarcode') IS NOT NULL
 					BEGIN
-						INSERT INTO #Couponsbarcode(CouponsBarCode,CouponsCode,CouponsName)
-						SELECT  upper(@Prefix)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-1)+
+						INSERT INTO #Couponsbarcode(RowID,CouponsBarCode,CouponsCode,CouponsName)
+						SELECT @RowID, upper(@Prefix)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-1)+
 						dbo.fn_getcheckcode(right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)-1),'LUHN'),
 						@CouponsCode,@CouponsName
 						FROM Numbers n
@@ -202,8 +203,8 @@ AS
 					END
 				IF @Doccode='' AND OBJECT_ID('tempdb.dbo.#Couponsbarcode') IS NOT NULL
 					BEGIN
-						INSERT INTO #Couponsbarcode(CouponsBarCode,CouponsCode,CouponsName)
-						SELECT upper(@Prefix)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)),
+						INSERT INTO #Couponsbarcode(RowID,CouponsBarCode,CouponsCode,CouponsName)
+						SELECT @RowID, upper(@Prefix)+right('00000000000000000000'+ CONVERT(VARCHAR(50),n.digit),@Length-LEN(@Prefix)),
 						@CouponsCode,@CouponsName
 						FROM Numbers n
 						WHERE digit BETWEEN @StartNum AND @StartNum+  @GenerateCount-1

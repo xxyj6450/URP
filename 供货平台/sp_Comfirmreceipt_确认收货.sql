@@ -16,27 +16,24 @@
 	回填送货单收货状态.
 示例:
 begin tran
-exec sp_ComfirmReceipt 'JDC2012121200466',4950,'SYSTEM','2.1.791.03.44','D109.01','','1243010B-4C4E-40FE-AAC5-B3AD367AA74D','1',''
- 
+exec sp_ComfirmReceipt 'JDC2012121800186',4950,'SYSTEM','2.1.752.04.80','D101.01','','3389412B-3F80-423B-940E-F3CC27167BB3','1',''
+ select * from urp11.jturp.dbo.icoupons where stcode='2.1.752.04.80'
+ select * from urp11.jturp.dbo.strategylog 
+ select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013011800000'
  update iseries
 	set state='送货'
  where seriescode='111222222222222'
  rollback
  set xact_abort on
  begin tran
-exec sp_ComfirmReceipt 'JDC2013010100460',4950,'SYSTEM','2.1.020.09.05','001.020','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
-
+exec sp_ComfirmReceipt 'JDC2013010600260',4950,'SYSTEM','2.1.512.02.50','001.512','','FF2DCB8D-62C1-463C-8684-1A869E2F1117',''
+ select * from urp11.jturp.dbo.icoupons where stcode='2.1.512.02.50'
+ select * from urp11.jturp.dbo.strategylog 
+ select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013011900000'
+ 
 begin tran
 exec sp_ComfirmReceipt 'JDC2012121500460',4950,'SYSTEM','2.1.791.03.25','111.769','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
 
- 
-select instanceid,stcode,instcode from spickorderhd where doccode='JDC2012112800026'
-print dbo.instanceid()
-rollback
-1.868429010299206[联想A60+黑色]
-select * from ostorage where stcode='102'2.862726019083960[中兴V889D-WCDMA黑色]
-print dbo.instanceid()488EFECF-8488-40D4-A4AF-36B1216D07483.867439011788645[天语W619渠道版黄色]
- 4.866022011488076[联想A690黑色]
 */
  
 alter proc sp_ComfirmReceipt
@@ -58,8 +55,8 @@ as
 		declare @refcode varchar(20),  @sql nvarchar(max),@tips varchar(max),
 		@trancount int,@SQL_Seriescode varchar(max),@sql_Fields varchar(max),
 		@AccessName varchar(200),@SYSTEMNAME varchar(50),@SeriesRowcount INT,
-		@DatabaseName VARCHAR(50),@ServerName VARCHAR(50),@rowcount int
-		
+		@DatabaseName VARCHAR(50),@ServerName VARCHAR(50),@rowcount int,@DocDataXML nvarchar(max),@ResultXML varchar(8000),@DataSourceXML nvarchar(max)
+		declare @hXMLDocument int,@Definition varchar(max)
 		/**************************************************参数检查********************************************************************/
 		--若实例ID为空,则尝试从配送仓库中取出服务器实例ID
 		if isnull(@InstanceID,'')=''
@@ -84,6 +81,7 @@ as
 		SELECT @DatabaseName=SUBSTRING(@AccessName,CHARINDEX('.',@AccessName)+1,50)
  
 		/************************************************初始化数据******************************************************************/
+		--创建串号临时表，用于存储本次收货的串号。不论是本地服务器还是远程服务器都先将串号存储进来，减少对串号表的操作和远程服务器操作。
 		CREATE TABLE #iSeries (
 			Seriescode VARCHAR(50),
 			RowID VARCHAR(50),
@@ -93,6 +91,41 @@ as
 			STATE VARCHAR(50),
 			RefState varchar(50)
 		)
+		Create TABLE #DataSource(
+			Doccode varchar(20),
+			FormID int,
+			DocDate datetime,
+			SDOrgID varchar(50),
+			dptType varchar(50),
+			stcode varchar(50),
+			stName varchar(200),
+			AreaID varchar(50),
+			SDOrgPath varchar(200),
+			AreaPath varchar(200),
+			RowID varchar(50),
+			SeriesCode varchar(50),
+			Matcode varchar(50),
+			MatName varchar(200),
+			Matgroup varchar(50),
+			MatgroupPath varchar(200),
+			Digit int,
+			Price money,
+			Totalmoney money
+		)
+		Create TABLE #DocData(
+			Doccode varchar(20),
+			FormID int,
+			DocDate datetime,
+			SDOrgID varchar(50),
+			SDOrgName varchar(200),
+			stcode varchar(50),
+			stName varchar(200),
+			dptType varchar(50),
+			AreaID varchar(50),
+			SDOrgPath varchar(200),
+			AreaPath varchar(200)
+			)
+		--若送货单在本机，则直接从本机取数据。
 		IF @InstanceID=dbo.InstanceID()
 			BEGIN
 				--取出串号单
@@ -101,7 +134,9 @@ as
 					BEGIN
 						--取出串号缓存至临时表,以供后续使用.
 						INSERT INTO #iSeries
-						select i2.seriescode,i2.rowid,i2.matcode,i2.matname,i2.docitem,convert(varchar(20),'') as state,convert(varchar(20),'') as Refstate
+						select row_number() over(partition by i2.matcode order by (select 1)) as ID,
+						i2.seriescode,i2.rowid,i2.matcode,i2.matname,i2.docitem,convert(varchar(20),'') as state,convert(varchar(20),'') as Refstate,
+						Convert(varchar(50),'') as couponsBarcode,Convert(varchar(50),'') as couponscode
 						from iserieslogitem i2 with(nolock)
 						where i2.doccode=@refcode
 						SELECT @SeriesRowcount=@@ROWCOUNT
@@ -112,7 +147,7 @@ as
 					END
 				 
 			END
-		ELSE
+		ELSE--若送货单不在本机，则从远程服务器取数据。
 		BEGIN
  
 				SELECT @sql='Select @Refcode=Doccode From Openquery('+@ServerName+','+dbo.crlf()+
@@ -146,17 +181,55 @@ as
 						update a
 							set a.state=b.state
 						from #iseries a inner join dbo.iSeries b with(nolock) on a.seriescode=b.seriescode
+						--生成单据数据源
+						Insert Into #DataSource(Doccode,FormID,Docdate,SDOrgID,dptType,stcode,stname,AreaID,SDOrgPath,AreaPath,Seriescode,rowid,Matcode,MatName,Matgroup,MatgroupPath,Digit,Price,Totalmoney)
+						select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,os.dpttype,sph.instcode,sph.instname,os.AreaID,os.PATH,ga.PATH,
+						sp.Seriescode,sp.rowid,sp.MatCode,sp.MatName,img.MatGroup,img2.PATH,sp.Digit,sp.price,sp.totalmoney
+						From sPickorderHD sph with(nolock) inner join sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode
+						inner join oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID
+						inner join gArea ga with(nolock) on os.AreaID=ga.areaid
+						inner join iMatGeneral img with(nolock) on sp.MatCode=img.MatCode
+						inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
+						where sph.DocCode=@Doccode
+						Insert Into #DocData(Doccode,FormID,Docdate,SDOrgID,stcode,stname,dptType,AreaID,SDOrgPath,AreaPath)
+						select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,sph.instcode,sph.instname,os.dpttype,os.AreaID,os.PATH,ga.PATH
+						From sPickorderHD sph with(nolock) inner join sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode
+						inner join oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID
+						inner join gArea ga with(nolock) on os.AreaID=ga.areaid
+						where sph.DocCode=@Doccode
 					END
 				ELSE
 				BEGIN
- 
 						---取出这些串号在URP中的串号状态
 						update a
 							set a.state=b.state
 						from #iseries a inner join URP11.JTURP.dbo.iSeries b with(nolock) on a.seriescode=b.seriescode
-					END
- 
-			 
+						--生成单据数据源
+					select @sql='	Insert Into #DataSource(Doccode,FormID,Docdate,SDOrgID,dptType,stcode,stname,AreaID,SDOrgPath,AreaPath,'+char(10)
+						+' rowid,Seriescode,Matcode,MatName,Matgroup,MatgroupPath,Digit,Price,Totalmoney)'+char(10)
+						+' select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,dpttype,sph.instcode,sph.instname,AreaID,SDOrgPATH,AreaPATH,'+char(10)
+						+' RowID,Seriescode,MatCode,MatName,MatGroup,MatgroupPATH,Digit,price,totalmoney'+char(10)
+						+' From OpenQuery('+@ServerName+',''Select sph.sdorgid2,os.dpttype,sph.instcode,sph.instname,os.AreaID,os.PATH as SDOrgPath,ga.PATH as AreaPath,'+char(10)
+						+' sp.rowid,sp.Seriescode,sp.MatCode,img.MatName,img.MatGroup,img2.PATH as MatgroupPath,'+char(10)
+						+' sp.Digit,sp.price,sp.totalmoney'+char(10)
+						+' From '+@DatabaseName +'.dbo.sPickorderHD sph with(nolock) inner join '+@DatabaseName +'.dbo.sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode'+char(10)
+						+'	inner join '+@DatabaseName +'.dbo.oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID'+char(10)
+						+'	inner join '+@DatabaseName +'.dbo.gArea ga with(nolock) on os.AreaID=ga.areaid'+char(10)
+						+'	inner join  '+@DatabaseName +'.dbo.iMatGeneral img with(nolock) on sp.MatCode=img.MatCode'+char(10)
+						+'	inner join  '+@DatabaseName +'.dbo.iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup'+char(10)
+						+'	where sph.DocCode='''''+@Doccode+''''''') sph'
+						print @sql
+						exec sp_executesql @sql,N'@Doccode varchar(20),@FormID int',@Doccode=@Doccode,@Formid=@Formid
+						select @sql='	Insert Into #DocData(Doccode,FormID,Docdate,SDOrgID,stcode,stname,dptType,AreaID,SDOrgPath,AreaPath)'+char(10)
+						+' select @Doccode,@Formid,convert(varchar(10),getdate(),120),sdorgid2,instcode,instname,dpttype,AreaID,SDorgPATH,AreaPATH'+char(10)
+						+' From OpenQuery('+@ServerName+',''Select sph.sdorgid2,sph.instcode,sph.instname,sph.dpttype,os.AreaID,os.PATH as SDOrgPath,ga.PATH as AreaPath'+char(10)
+						+' From '+@DatabaseName +'.dbo.sPickorderHD sph with(nolock) '+char(10)
+						+'	inner join '+@DatabaseName +'.dbo.oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID'+char(10)
+						+'	inner join '+@DatabaseName +'.dbo.gArea ga with(nolock) on os.AreaID=ga.areaid'+char(10)
+						+'	where sph.DocCode='''''+@Doccode+''''''') sph'
+						print @sql
+						exec sp_executesql @sql,N'@Doccode varchar(20),@FormID int',@Doccode=@Doccode,@Formid=@Formid
+				END
 				SELECT @tips='以下串号不在送货状态,无法收货.'+dbo.crlf()
 				SELECT @tips=@tips+seriescode+'目前状态为['+ISNULL(STATE,'')+']'+dbo.crlf()
 				FROM #iSeries
@@ -167,11 +240,24 @@ as
 						return
 					END
 			END
-		
+		--将数据源转换成XML
+		if exists(select 1 from #DocData)
+			BEGIN
+				set @DocDataXML=(select * from #DocData for xml raw,root('root'))
+				set @Definition='Doccode varchar(20),	FormID int,DocDate datetime,SDOrgID varchar(50),dptType varchar(50),AreaID varchar(50),SDOrgPath varchar(200),stcode varchar(50),stName varchar(200),
+				AreaPath varchar(200),SeriesCode varchar(50),RowID varchar(50),Matcode varchar(50),MatName varchar(200),Matgroup varchar(50),MatgroupPath varchar(200),Digit int,Price money,
+				Totalmoney money'
+				set @DataSourceXML= (select * from #DataSource ds for xml raw)
+				select @DataSourceXML='<root><DataTable TableName="#XMLDataSource" Definition=''' +@Definition+'''>'+@DataSourceXML+'</DataTable></root>'
+			END
 		/***********************************************************业务处理****************************************************/
 		select @TRANCOUNT=@@TRANCOUNT
 		if @trancount=0 begin tran
 		begin try
+			--执行优惠券策略
+			exec URP11.JTURP.dbo.sp_ExecuteStrategy @Formid,@Doccode,2,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
+			print '终于执行完策略了。'
+			print @ResultXML
 			--回填送货单
 			if @InstanceID=dbo.InstanceID()
 				BEGIN
@@ -180,7 +266,6 @@ as
 						set getok='已收货',
 						getday=convert(varchar(30),getdate(),120),
 						getname = @Usercode
-						
 					where DocCode=@Doccode
 					and isnull(getok,'未收货')='未收货'
 					and DocStatus<>0
@@ -207,11 +292,11 @@ as
 								SET b.[refstate]=a.state
 							FROM URP11.JTURP.dbo.iSeries a WITH(NOLOCK),#iseries b
 							WHERE a.SeriesCode=b.seriescode
+							
 						END
 				END
 			else
 			BEGIN
-				 
 					--PRINT '更新单据状态'
 					select @sql='Update Openquery('+@ServerName+',''Select getok,getday,getname,doccode From '+dbo.crlf()+
 					@DatabaseName+'.dbo.spickorderhd '+dbo.crlf()+
@@ -249,8 +334,9 @@ as
 									return
 								END						
 						END
+						
 				END
-			
+				
 			--如果发货平台(串号来源)就是URP销售系统(目的系统),就不再对串号进行处理了
 			if @AccessName='URP11.JTURP' RETURN
 			--若没有串号,也不往下执行
@@ -324,7 +410,6 @@ as
 					/*insert into openquery(URP11,'Select '+@SQL_Seriescode+' From JTURP.dbo.iseries')
 					select is2.* from iSeries is2 with(nolock) inner join #iseries b on is2.SeriesCode=b.seriescode
 					where b.state is null*/
- 
 					
 					SET @sql = 'insert into openquery(URP11,''Select '+@sql_Fields+' From JTURP.dbo.iseries'') ' + char(10)
 							 + '			select is2.* from iSeries is2 with(nolock) inner join #iseries b on is2.SeriesCode=b.seriescode ' + char(10)

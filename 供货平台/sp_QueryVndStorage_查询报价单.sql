@@ -62,7 +62,7 @@ as
 		and (@Matcode='' or img.MatCode like @Matcode+'%')
 		and img.matfor=1
 		and  isactived=1
-		and matstatus in ('重点主推','正常销售') 
+		and matstatus in ('新品','重点主推','正常销售') 
 		--再更新价格
 		update a
 		set a.price=uss.selfprice1
