@@ -19,18 +19,18 @@ begin tran
 exec sp_ComfirmReceipt 'JDC2012121800186',4950,'SYSTEM','2.1.752.04.80','D101.01','','3389412B-3F80-423B-940E-F3CC27167BB3','1',''
  select * from urp11.jturp.dbo.icoupons where stcode='2.1.752.04.80'
  select * from urp11.jturp.dbo.strategylog 
- select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013011800000'
+ select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013012300000'
  update iseries
 	set state='送货'
  where seriescode='111222222222222'
- rollback
+  rollback
  set xact_abort on
  begin tran
 exec sp_ComfirmReceipt 'JDC2013010600260',4950,'SYSTEM','2.1.512.02.50','001.512','','FF2DCB8D-62C1-463C-8684-1A869E2F1117',''
  select * from urp11.jturp.dbo.icoupons where stcode='2.1.512.02.50'
  select * from urp11.jturp.dbo.strategylog 
- select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013011900000'
- 
+ select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013012200000'
+ select * from urp11.jturp.dbo.iseries where seriescode in('869459018502979')
 begin tran
 exec sp_ComfirmReceipt 'JDC2012121500460',4950,'SYSTEM','2.1.791.03.25','111.769','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
 
@@ -52,7 +52,7 @@ as
 		set XACT_ABORT on;
 		
 		/***************************************************变量声名*********************************************************************/
-		declare @refcode varchar(20),  @sql nvarchar(max),@tips varchar(max),
+		declare @refcode varchar(20),  @sql nvarchar(max),@tips varchar(max),@ret int,
 		@trancount int,@SQL_Seriescode varchar(max),@sql_Fields varchar(max),
 		@AccessName varchar(200),@SYSTEMNAME varchar(50),@SeriesRowcount INT,
 		@DatabaseName VARCHAR(50),@ServerName VARCHAR(50),@rowcount int,@DocDataXML nvarchar(max),@ResultXML varchar(8000),@DataSourceXML nvarchar(max)
@@ -83,14 +83,18 @@ as
 		/************************************************初始化数据******************************************************************/
 		--创建串号临时表，用于存储本次收货的串号。不论是本地服务器还是远程服务器都先将串号存储进来，减少对串号表的操作和远程服务器操作。
 		CREATE TABLE #iSeries (
+			ID int,
 			Seriescode VARCHAR(50),
 			RowID VARCHAR(50),
 			Matcode VARCHAR(50),
 			MatName VARCHAR(50),
 			Docitem INT,
 			STATE VARCHAR(50),
-			RefState varchar(50)
+			RefState varchar(50),
+			CouponsBarcode varchar(50),
+			CouponsCode varchar(50)
 		)
+		--创建数据源临时表,用于策略匹配
 		Create TABLE #DataSource(
 			Doccode varchar(20),
 			FormID int,
@@ -112,6 +116,7 @@ as
 			Price money,
 			Totalmoney money
 		)
+		--创建单据数据临时表,用于传入至策略执行中
 		Create TABLE #DocData(
 			Doccode varchar(20),
 			FormID int,
@@ -133,7 +138,7 @@ as
 				IF @@ROWCOUNT>0
 					BEGIN
 						--取出串号缓存至临时表,以供后续使用.
-						INSERT INTO #iSeries
+						INSERT INTO #iSeries(ID,Seriescode,RowID,Matcode,MatName,Docitem,STATE,RefState,CouponsBarcode,Couponscode)							
 						select row_number() over(partition by i2.matcode order by (select 1)) as ID,
 						i2.seriescode,i2.rowid,i2.matcode,i2.matname,i2.docitem,convert(varchar(20),'') as state,convert(varchar(20),'') as Refstate,
 						Convert(varchar(50),'') as couponsBarcode,Convert(varchar(50),'') as couponscode
@@ -156,12 +161,13 @@ as
 				EXEC sp_executesql @sql,N'@Refcode varchar(50) output',@refcode=@refcode OUTPUT
 				IF @@ROWCOUNT>0
 					BEGIN
-						SELECT @Sql='INSERT INTO #iSeries '+dbo.crlf()+
-						' select i2.seriescode,i2.rowid,i2.matcode,i2.matname,i2.docitem,convert(varchar(20),'''') as state, convert(varchar(20),'''') as state'+dbo.crlf()+
+						SELECT @Sql='INSERT INTO #iSeries(ID,Seriescode,RowID,Matcode,MatName,Docitem) '+dbo.crlf()+
+						' select row_number() over(partition by i2.matcode order by (select 1)) as ID,'+dbo.crlf()+
+						' i2.seriescode,i2.rowid,i2.matcode,i2.matname,i2.docitem'+dbo.crlf()+
 						' from OpenQuery('+@ServerName +','+dbo.crlf()+
 						''' Select Seriescode,RowID,Matcode,MatName,DocItem From '+@DatabaseName +'.dbo.iserieslogitem i2 with(nolock)'+dbo.crlf()+
 						' where i2.doccode='''''+@refcode+''''''') i2'
-						print @sql
+						--print @sql
 						EXEC(@sql)
 						SELECT @SeriesRowcount=@@ROWCOUNT
 					END
@@ -218,7 +224,7 @@ as
 						+'	inner join  '+@DatabaseName +'.dbo.iMatGeneral img with(nolock) on sp.MatCode=img.MatCode'+char(10)
 						+'	inner join  '+@DatabaseName +'.dbo.iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup'+char(10)
 						+'	where sph.DocCode='''''+@Doccode+''''''') sph'
-						print @sql
+						--print @sql
 						exec sp_executesql @sql,N'@Doccode varchar(20),@FormID int',@Doccode=@Doccode,@Formid=@Formid
 						select @sql='	Insert Into #DocData(Doccode,FormID,Docdate,SDOrgID,stcode,stname,dptType,AreaID,SDOrgPath,AreaPath)'+char(10)
 						+' select @Doccode,@Formid,convert(varchar(10),getdate(),120),sdorgid2,instcode,instname,dpttype,AreaID,SDorgPATH,AreaPATH'+char(10)
@@ -227,7 +233,7 @@ as
 						+'	inner join '+@DatabaseName +'.dbo.oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID'+char(10)
 						+'	inner join '+@DatabaseName +'.dbo.gArea ga with(nolock) on os.AreaID=ga.areaid'+char(10)
 						+'	where sph.DocCode='''''+@Doccode+''''''') sph'
-						print @sql
+						--print @sql
 						exec sp_executesql @sql,N'@Doccode varchar(20),@FormID int',@Doccode=@Doccode,@Formid=@Formid
 				END
 				SELECT @tips='以下串号不在送货状态,无法收货.'+dbo.crlf()
@@ -244,20 +250,38 @@ as
 		if exists(select 1 from #DocData)
 			BEGIN
 				set @DocDataXML=(select * from #DocData for xml raw,root('root'))
+				--将业务数据接入
 				set @Definition='Doccode varchar(20),	FormID int,DocDate datetime,SDOrgID varchar(50),dptType varchar(50),AreaID varchar(50),SDOrgPath varchar(200),stcode varchar(50),stName varchar(200),
-				AreaPath varchar(200),SeriesCode varchar(50),RowID varchar(50),Matcode varchar(50),MatName varchar(200),Matgroup varchar(50),MatgroupPath varchar(200),Digit int,Price money,
-				Totalmoney money'
+				AreaPath varchar(200),SeriesCode varchar(50),RowID varchar(50),Matcode varchar(50),MatName varchar(200),Matgroup varchar(50),MatgroupPath varchar(200),Digit int,Price money,Totalmoney money'
 				set @DataSourceXML= (select * from #DataSource ds for xml raw)
-				select @DataSourceXML='<root><DataTable TableName="#XMLDataSource" Definition=''' +@Definition+'''>'+@DataSourceXML+'</DataTable></root>'
+				select @DataSourceXML='<root><DataTable TableName="#DocData" Definition="'+@Definition+'">'+@DataSourceXML
+				select @DataSourceXML='<root><DataTable TableName="#XMLDataSource" Definition="' +@Definition+'">'+@DataSourceXML+'</DataTable>'
+				--再将串号数据也拼入
+				select @Definition='ID int,Seriescode VARCHAR(50),	RowID VARCHAR(50),Matcode VARCHAR(50),MatName VARCHAR(50),Docitem INT,STATE VARCHAR(50)'
+				select @DataSourceXML=@DataSourceXML+'<DataTable TableName="#iSeries" Definition="'+@Definition +'">'+
+				Convert(nvarchar(max),(Select ID,Seriescode,RowID,Matcode,MatName,Docitem,state from #iSeries For xml raw))+'</DataTable></root>'
+				
 			END
 		/***********************************************************业务处理****************************************************/
 		select @TRANCOUNT=@@TRANCOUNT
 		if @trancount=0 begin tran
 		begin try
 			--执行优惠券策略
-			exec URP11.JTURP.dbo.sp_ExecuteStrategy @Formid,@Doccode,2,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
-			print '终于执行完策略了。'
-			print @ResultXML
+			exec @ret=URP11.JTURP.dbo.sp_DistributedExecuteStrategy @Formid,@Doccode,2,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
+			--将串号与优惠券绑定
+			if isnull(@ResultXML,'')<>''
+				BEGIN
+					--此处需要将varchar(8000)转换成nvarchar(max)
+					declare @data nvarchar(max)
+					select @Data=convert(nvarchar(max),@ResultXML)
+					exec sp_xml_preparedocument @hXMLDocument output,@data
+					update a
+						set a.CouponsBarcode=b.Couponsbarcode,
+						a.CouponsCode=b.couponscode
+					from #iSeries a,OpenXML(@hXMLDocument,'/root/Strategygroup/OutputStrategy/row',1)   with(Seriescode varchar(50),CouponsBarCode varchar(50),CouponsCode varchar(50)) b
+					where a.Seriescode=b.seriescode
+					exec sp_xml_removedocument @hXMLDocument
+				END
 			--回填送货单
 			if @InstanceID=dbo.InstanceID()
 				BEGIN
@@ -278,7 +302,9 @@ as
 						BEGIN
 							--再更新串号状态
 							UPDATE A
-								SET a.[state]='应收'
+								SET a.[state]='应收',
+								a.CouponsBarcode=b.CouponsBarcode,
+								a.CouponsCode=b.CouponsCode
 							FROM iSeries a WITH(NOLOCK),#iseries b
 							WHERE a.SeriesCode=b.seriescode
 							AND a.[state]='送货'
