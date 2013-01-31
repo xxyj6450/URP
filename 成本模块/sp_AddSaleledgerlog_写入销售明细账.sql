@@ -1,6 +1,6 @@
 alter proc sp_AddSaleledger
 	@FormID int,
-	@Doccode int,
+	@Doccode varchar(50),
 	@OptionId varchar(50)='',
 	@UserCode varchar(50)='',
 	@TerminalID varchar(50)=''
