@@ -38,7 +38,7 @@ BEGIN      */
  
 	return
 	select a.PlantID as companyid,oc.plantname as companyname,a.sdorgid,os.SDOrgName,a.MatCode,
-	img.matname,img.MatGroup,img2.matgroupname,a.Stock,a.StockValue,a.ratevalue,a.MAP,a.ratemap
+	img.matname,img.MatGroup,img2.matgroupname,a.Stock,a.StockValue,a.ratevalue,isnull(1.0000*a.stockvalue/nullif(a.stock,0),0) as MAP,isnull(1.0000*a.ratevalue/nullif(a.stock,0),0) as ratemap
 	from iMatsdorgLedger a with(nolock)
 	inner join oPlant  oc with(nolock) on a.PlantID=oc.plantid
 	inner join oSDOrg os with(nolock) on a.sdorgid=os.SDOrgID

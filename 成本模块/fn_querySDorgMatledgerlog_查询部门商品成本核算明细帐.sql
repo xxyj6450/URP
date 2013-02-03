@@ -1,4 +1,10 @@
-create function fn_querySDorgMatledgerlog(
+/*
+
+select * From fn_querySDorgMatledgerlog('2013-01-01','2013-01-31','','1.1.769.13.02','1.01.079.1.1.1')
+select i.sdorgid,stcode, * from istockledgerlog i where docdate>'2013-1-30'
+*/
+
+alter function fn_querySDorgMatledgerlog(
 	@beginday datetime,    
 	@endday datetime,    
 	@companyid varchar(20),
@@ -27,6 +33,7 @@ returns  @table table  (
 	period varchar(120),
 	companyid varchar(200),
 	sdorgid varchar(200),
+	stcode varchar(50),
 	INPRICE MONEY,    
 	OUTPRICE MONEY,    
 	COSTPRICE MONEY    
@@ -69,7 +76,7 @@ from cte b
 	(select top 1 oldcode from imatbarcode kk where kk.matcode = a.matcode and kk.prdno = a.batchcode and kk.oldcode <> '') as oldcode,    
 	case when d.prdno is null then '外购' else '自产' end as prdflag,isnull(c.cltname,'')+isnull(e.vndname,'')+isnull(g.workshopname,'') as bunitname,    
 	a.inouttype,a.doccode,    
-	a.formid,a.doctype,a.docitem,a.plantid,@sdorgID ,0,0,0,0    
+	a.formid,a.doctype,a.docitem,a.plantid,a.sdorgid ,a.stcode, 0,0,0,0    
 	from istockledgerlog a with (nolock)    
 	inner join imatgeneral b on a.matcode = b.matcode    
 	inner join ocompany dd on a.companyid = dd.companyid    
@@ -79,8 +86,9 @@ from cte b
 	left join pvndgeneral e on a.vndcode = e.vndcode    
 	left join oWorkshop g on a.workshopid = g.workshopid    
 	where docdate between @beginday and @endday     
-	and (@companyid = '' or exists(select * from getinstr(@companyid) where list = a.companyid))     
-	and (@matcode = '' or exists(select * from getinstr(@matcode) where list = a.matcode))    
+	and (@companyid = '' or a.plantid=@companyid)     
+	and (@matcode = '' or exists(select * from getinstr(@matcode) where list = a.matcode))
+	and (@sdorgID='' or a.sdorgid=@sdorgID)
 	and formid not in (1541,2424,1507)    
 	-- and (inledgerdigit<>0 or outledgerdigit<>0)  lzy 2004-06-04修改    
 	order by inserttime    
@@ -122,10 +130,10 @@ from cte b
 	 deallocate cur    
     
     
-
-	UPDATE @table SET INPRICE=inledgeramount/inledgerdigit where isnull(inledgerdigit,0)<>0    
-	UPDATE @table SET outPRICE=outledgeramount/outledgerdigit where isnull(outledgerdigit,0)<>0    
-	UPDATE @table SET costPRICE=amount/stock where  stock<>0    
+	--价格需要保持正数 2013-02-01 三断笛
+	UPDATE @table SET INPRICE=abs(inledgeramount/inledgerdigit) where isnull(inledgerdigit,0)<>0    
+	UPDATE @table SET outPRICE=abs(outledgeramount/outledgerdigit) where isnull(outledgerdigit,0)<>0    
+	UPDATE @table SET costPRICE=abs(amount/stock) where  stock<>0    
 
 	return    
 end
