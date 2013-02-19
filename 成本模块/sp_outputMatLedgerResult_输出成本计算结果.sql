@@ -1,22 +1,26 @@
  
-Create proc sp_outputMatLedgerResult
+alter proc sp_outputMatLedgerResult
   @doccode VARCHAR(50),  --单号  
   @formid VARCHAR(10),     --功能号  
-  @rowid VARCHAR(50),   --行号  
-  @matcode VARCHAR(50),  --商品编号  
   @plantid VARCHAR(50),  --公司编号  
   @sdorgid VARCHAR(50),  --部门编号  
-  @periodid VARCHAR(10),  --期间  
-  @digit MONEY,    --数量  
-  @totalmoney MONEY,   --金额  
-  @ratemoney MONEY,   --加税点金额  
-  @mode CHAR,     --1出库正数，2出库负数，3入库正数，4入库负数
-  @type varchar(50),   --计算模式
-  @map money,
-  @rateMap money
+  @periodid VARCHAR(10),  --期间
+  @OptionID varchar(200)='',
+  @Usercode varchar(50)='',
+  @TerminalID varchar(50)=''
 as
 	BEGIN
 		set NOCOUNT on
+		declare   @rowid VARCHAR(50),   --行号  
+		@matcode VARCHAR(50),  --商品编号  
+		@digit MONEY,    --数量  
+		@totalmoney MONEY,   --金额  
+		@ratemoney MONEY,   --加税点金额  
+		@mode CHAR,     --1出库正数，2出库负数，3入库正数，4入库负数
+		@type varchar(50),   --计算模式
+		@map money,
+		@rateMap money
+	
 		--回填原单
  		IF @formid IN (4631)
  		begin

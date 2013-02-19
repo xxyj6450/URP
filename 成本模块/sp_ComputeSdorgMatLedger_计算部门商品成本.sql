@@ -31,32 +31,43 @@
  SET NOCOUNT ON  
  DECLARE @map MONEY ,@ratemap money
  BEGIN
- 	IF @formid IN (1512)
- 	BEGIN
- 		SET @digit=0
- 	END
-
-IF isnull(@plantid,'')=''  
- BEGIN  
-	 RAISERROR('出库时,公司为空值,过帐错误!',16,1)  
-	 RETURN  
- END  
-  IF isnull(@sdorgid,'')=''  
- BEGIN  
-	 RAISERROR('出库时,部门为空值,过帐错误!',16,1)  
-	 RETURN  
- END  
-  IF isnull(@formid,'') NOT IN (4631,2401,2419,2450,4950,2424,1523,1501,4031,1598,1504,4062,1553,1557,1509,4630,1507,1520,1512,4061,1599,2418,2420,4951,4032)  
- BEGIN  
-	 RAISERROR('业务功能未添加，请检查!',16,1)  
-	 RETURN  
- END
-  IF ISNULL(@matcode,'')=''
- BEGIN
-	 RAISERROR('出库时,商品为空值,过帐错误!',16,1)  
-	 RETURN 
- END 
- 
+ 	IF @formid IN (1512) SET @digit=0
+	IF isnull(@plantid,'')=''  
+	 BEGIN  
+		 RAISERROR('出库时,公司为空值,过帐错误!',16,1)  
+		 RETURN  
+	 END  
+	  IF isnull(@sdorgid,'')=''  
+	 BEGIN  
+		 RAISERROR('出库时,部门为空值,过帐错误!',16,1)  
+		 RETURN  
+	 END  
+	  IF isnull(@formid,'') NOT IN (4631,2401,2419,2450,4950,2424,1523,1501,4031,1598,1504,4062,1553,1557,1509,4630,1507,1520,1512,4061,1599,2418,2420,4951,4032)  
+	 BEGIN  
+		 RAISERROR('业务功能未添加，请检查!',16,1)  
+		 RETURN  
+	 END
+	  IF ISNULL(@matcode,'')=''
+	 BEGIN
+		 RAISERROR('出库时,商品为空值,过帐错误!',16,1)  
+		 RETURN 
+	 END
+--用于输出计算结果的表变量
+ declare @table table(
+ 	Matcode varchar(50),
+	RowID varchar(50),
+ 	OldStock int,
+ 	OldStockValue money,
+ 	OldRateValue money,
+	Digit int,
+	Totalmoney money,
+	RateMoney money,
+ 	Stock int,
+ 	StockValue money,
+ 	RateValue money,
+	Mode char,
+	ComputeType  varchar(50)
+ 	)
   ---------------------出库 取移动加权平均成本-------------------------
   /*
   采购退货1504,代销退货4631,零售出库单2419,促销出库单2450,送货单4950,调拨出库单2424,领料出库单1523,盘亏单1501,
@@ -70,7 +81,14 @@ IF isnull(@plantid,'')=''
   IF @mode=1 
  	BEGIN
  		SELECT @map=stockvalue/stock,@ratemap=ratevalue/stock FROM iMatsdorgLedger WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
- 		UPDATE iMatsdorgLedger SET stock=stock-@digit,StockValue =stockvalue-@map*@digit,ratevalue = ratevalue-@ratemap*@digit WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		UPDATE iMatsdorgLedger 
+ 		SET stock=stock-@digit,StockValue =stockvalue-@map*@digit,ratevalue = ratevalue-@ratemap*@digit 
+ 		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+ 		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+		if @@Rowcount=0
+			begin
+				raiserror('无成本数据，无法处理出库成本！',16,1)
+			end 
  		UPDATE imatledger SET stock=stock-@digit,StockValue =stockvalue-@map*@digit,ratevalue = ratevalue-@ratemap*@digit WHERE plantid=@plantid AND matcode=@matcode  
  		update imatsdorgbalance SET outdigit=outdigit+@digit,outamount=outamount+@map*@digit,outrateamount = outrateamount+@ratemap*@digit
  		WHERE plantid=@plantid and sdorgid=@sdorgid AND periodid=@periodid and matcode=@matcode
@@ -81,7 +99,13 @@ IF isnull(@plantid,'')=''
   IF @mode=2
  	BEGIN
  		SELECT @map=stockvalue/stock,@ratemap=ratevalue/stock FROM iMatsdorgLedger WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
- 		UPDATE iMatsdorgLedger SET stock=stock-@digit,StockValue =stockvalue-@map*@digit,ratevalue = ratevalue-@ratemap*@digit WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		UPDATE iMatsdorgLedger SET stock=stock-@digit,StockValue =stockvalue-@map*@digit,ratevalue = ratevalue-@ratemap*@digit 
+ 		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+ 		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+		if @@Rowcount=0
+			begin
+				raiserror('无成本数据，无法处理出库成本！',16,1)
+			end 
  		UPDATE imatledger SET stock=stock-@digit,StockValue =stockvalue-@map*@digit,ratevalue = ratevalue-@ratemap*@digit WHERE plantid=@plantid AND matcode=@matcode  
  		update imatsdorgbalance SET indigit=indigit-@digit,inamount=inamount-@map*@digit,inrateamount = inrateamount-@ratemap*@digit
  		WHERE plantid=@plantid and sdorgid=@sdorgid AND periodid=@periodid and matcode=@matcode
@@ -92,13 +116,17 @@ IF isnull(@plantid,'')=''
   --入库  借方正数    1509,4630,1507,1520,1512,4061,1599    1553,1557--入库商品
   IF @mode=3
  	BEGIN
- 		UPDATE iMatsdorgLedger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		UPDATE iMatsdorgLedger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney 
+		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
  		
 		if @@rowcount = 0                
-		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)                
+		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)      
+		output inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table          
 		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney) 
       
- 		UPDATE imatledger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney WHERE plantid=@plantid AND matcode=@matcode  
+ 		UPDATE imatledger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney 
+		WHERE plantid=@plantid AND matcode=@matcode  
 		if @@rowcount = 0                
 		insert into imatledger (plantid,matcode,matvalue,stock,stockvalue,ratevalue)                
 		values (@plantid,@matcode,'',@digit,@totalmoney,@ratemoney) 
@@ -119,9 +147,12 @@ IF isnull(@plantid,'')=''
   --入库  贷方负数    2418,2420,4951,4032
   IF @mode=4
  	BEGIN
- 		UPDATE iMatsdorgLedger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		UPDATE iMatsdorgLedger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney 
+		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
 		if @@rowcount = 0                
-		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)                
+		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)           
+		output inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table        
 		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney) 
 		
  		UPDATE imatledger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney WHERE plantid=@plantid AND matcode=@matcode  
@@ -141,5 +172,5 @@ IF isnull(@plantid,'')=''
 		insert into imatbalance (plantid,periodid,matcode,matvalue,prestock,prestockvalue,outdigit,outamount,outrateamount)                
 		values (@plantid,@periodid,@matcode,'',0,0,@digit,@totalmoney,@ratemoney)
 	END 
-    
+    select @resultxml=(select * From @table For XML RAW)
 END
