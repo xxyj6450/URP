@@ -29,7 +29,7 @@
  )  
  AS  
  SET NOCOUNT ON  
- DECLARE @map MONEY ,@ratemap money
+ --DECLARE @map MONEY ,@ratemap money
  BEGIN
  	IF @formid IN (1512) SET @digit=0
 	IF isnull(@plantid,'')=''  
@@ -81,11 +81,11 @@
   --出库  贷方正数     4631,2401,2419,2450,4950,2424,1523,1501,4031,1598   
   IF @mode=1 
  	BEGIN
- 		SELECT @map= isnull(stockvalue,0)/stock ,
+ 		/*SELECT @map= isnull(stockvalue,0)/stock ,
  		@ratemap= isnull(ratevalue,0)/stock  
- 		FROM iMatsdorgLedger WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		FROM iMatsdorgLedger WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode*/
  		UPDATE iMatsdorgLedger 
- 		SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-@map*@digit,ratevalue = isnull(ratevalue,0)-@ratemap*@digit 
+ 		SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit 
  		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
  		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
 		if @@Rowcount=0
@@ -101,12 +101,12 @@
   --出库  借方负数     1504,4062      1553,1557--出库商品
   IF @mode=2
  	BEGIN
- 		SELECT @map= isnull(stockvalue,0)/stock ,
+ 		/*SELECT @map= isnull(stockvalue,0)/stock ,
  		@ratemap= isnull(ratevalue,0)/stock  
  		FROM iMatsdorgLedger 
  		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
- 		
- 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-@map*@digit,ratevalue = isnull(ratevalue,0)-@ratemap*@digit 
+ 		*/
+ 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit 
  		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
  		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
 		if @@Rowcount=0

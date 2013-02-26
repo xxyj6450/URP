@@ -39,7 +39,7 @@ BEGIN
 		Mode int DEFAULT 0,
 		ComputeType varchar(50) DEFAULT ''
 	)
-		--用于输出计算结果的表变量
+	--用于输出计算结果的表变量
 	 Create Table #XMLDataTable (
  		Matcode varchar(50),						--商品编码
 		RowID varchar(50),							--x
@@ -449,13 +449,22 @@ BEGIN
 	exec sp_XML_RemoveDocument @hDocument
 	--print @XMLResult
 	--select * From #XMLDataTable
+	/*insert into #ResultTable(Doccode,Formid,refformid,refcode,plantid,sdorgid,periodid,matcode,rowid,
+	oldstock,oldstockvalue,oldratevalue,
+	digit,totalmoney,ratemoney,
+	stock,stockvalue,ratevalue,
+	mode,computetype,optionid)
+	select @Doccode,@FormID,@RefFormID,@RefCode,@CompanyID,@SDOrgID,@PeriodID,Matcode,RowID,
+	OldStock,OldStockValue,OldRateValue,Digit,Totalmoney,RateMoney,
+	Stock,StockValue,RateValue,Mode,ComputeType,@OptionID 
+	From #XMLDataTable*/
 	--执行输出
 	begin try
 		
 		exec sp_outputMatLedgerResult @Doccode,@FormID,@DocDate,@Companyid,@SDOrgID ,@PeriodID,@OptionID,@Usercode,@TerminalID
 	end try
 	BEGIN catch
-		select * from #table
+		--select * from #table
 		select @tips= '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ isnull(@Doccode,'')+','+isnull(@matcode,'')+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+'>>>>'+convert(varchar(30),getdate(),120)
 		select @tips=@tips+char(10)+dbo.getLastError('输出成本数据错误.')
 		raiserror(@tips,16,1)

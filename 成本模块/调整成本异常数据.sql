@@ -2,13 +2,13 @@ return
 --初始化数据
 begin tran
 --初始化捷通部门期初成本
-delete iMatsdorgLedger --where MatCode='1.07.003.2.1.1'
+delete iMatsdorgLedger where MatCode in('S6.04.14.01.01.1')
 	INSERT INTO iMatsdorgLedger(plantid,sdorgid,matcode,stock,stockvalue,ratevalue)
 	SELECT t.plantid,e.sdorgid,t.matcode,SUM(t.digit) digit,SUM(t.digit)*isnull(price,0) AS stockvalue,
 	(case when t.plantid not in ('101','115') then (SUM(t.digit)*isnull(price,0))*(100+isnull(l.addpresent,0))/100 else SUM(t.digit)*price END) AS ratevalue 
 	FROM ckdigit t LEFT JOIN vstorage e ON t.stcode=e.stcode LEFT JOIN imatgeneral l ON t.matcode=l.matcode
 	--where t.plantid<>'115' and left(t.matcode,2) in ('1.','S1','Y1') 
-	--where  l.MatCode ='1.07.003.2.1.1'
+	where  l.MatCode in('S6.04.14.01.01.1')
 	GROUP BY t.plantid,e.sdorgid,t.matcode,price,addpresent
 
 	commit
@@ -53,7 +53,26 @@ from spickorderhd d left join vstorage e on d.stcode=e.stcode where periodid>'20
 and d.sdorgid<>e.sdorgid
 ------------------------------------------------------------------调整调拔出库单核算时间-------------------------------------------------------------
 begin tran
+--先改调拔入库单
+--将调拔入库单的日期和期间改成过帐日期
+update a
+	set a.docdate=convert(varchar(10),postdate,120),
+	a.PeriodID=convert(varchar(7),postdate,120)
+--select doccode,a.DocDate,a.PostDate
+from imatdoc_h a
+where a.FormID in(1507,4061,4032)
+and a.DocDate>='2013-01-01'
+and datepart(mm,a.DocDate)<>datepart(mm,a.PostDate)
 
+update a
+	set a.docdate=convert(varchar(10),postdate,120),
+	a.PeriodID=convert(varchar(7),postdate,120)
+--select doccode,a.DocDate,a.PostDate
+from spickorderhd a
+where a.FormID in(1507,4061,4032)
+and a.DocDate>='2013-01-01'
+and datepart(mm,a.DocDate)<>datepart(mm,a.PostDate)
+--再处理出库,将出库日期改成入库数据
 update sph
 	set sph.docdate=a.DocDate,sph.periodid=a.PeriodID
 --select a.doccode,a.docdate,sph.doccode,sph.DocDate
@@ -62,32 +81,52 @@ where a.refCode=sph.DocCode
 and a.FormID=1507
 and sph.FormID=2424
 and a.DocDate>='2013-02-01'
-and sph.DocDate <'2013-02-01' and sph.DocDate>'2013-01-01'
-
-update sph
-	set sph.docdate=a.docdate,sph.periodid=a.PeriodID,sph.inserttime=a.PostDate
---select a.doccode,a.docdate,sph.doccode,sph.DocDate
-from imatdoc_h a,istockledgerlog  sph
-where a.refCode=sph.DocCode
-and a.FormID=1507
-and sph.FormID=2424
-and a.DocDate>='2013-02-01'
-and sph.DocDate <'2013-02-01' and sph.DocDate>'2013-01-01'
- 
+and sph.DocDate <'2013-02-01' and sph.DocDate>='2013-01-01'
 update i
-	set inserttime =sph1.PostDate
+	set inserttime =sph1.PostDate,
+	periodid = sph1.PeriodID,
+	docdate = sph1.DocDate
 from istockledgerlog i with(nolock)  
 inner join imatdoc_h sph1 with(nolock) on sph1.refcode=i.doccode
 where i.formid in(2424,4031)
 and sph1.FormID in(1507,4061)
 and i.docdate>='2013-01-01'
-
+--再更新调入明细账，从调入单更新
 update i
-	set inserttime =sph1.PostDate
+	set inserttime =sph1.PostDate,
+	periodid = sph1.PeriodID,
+	docdate = sph1.DocDate
+from istockledgerlog i with(nolock)  
+inner join spickorderhd sph1 with(nolock) on sph1.doccode=i.doccode
+where sph1.formid in(1507,4061,4032)
+and i.docdate>='2013-01-01'
+update i
+	set inserttime =sph1.PostDate,
+	periodid = sph1.PeriodID,
+	docdate = sph1.DocDate
+from istockledgerlog i with(nolock)  
+inner join imatdoc_h sph1 with(nolock) on sph1.doccode=i.doccode
+where sph1.formid in(1507,4061,4032)
+and i.docdate>='2013-01-01'
+--更新调出单明细，直接使用调入单的数据
+update i
+	set inserttime =sph1.PostDate,
+	periodid = sph1.PeriodID,
+	docdate = sph1.DocDate
+	-- select i.*
+from istockledgerlog i with(nolock)  
+inner join imatdoc_h sph1 with(nolock) on sph1.refcode=i.doccode
+where i.formid in(2424,4062,4031)
+and sph1.FormID in(4032,1507,4061)
+and i.docdate>='2013-01-01'
+update i
+	set inserttime =sph1.PostDate,
+	periodid = sph1.PeriodID,
+	docdate = sph1.DocDate
 from istockledgerlog i with(nolock)  
 inner join spickorderhd sph1 with(nolock) on sph1.refcode=i.doccode
-where i.formid in(4062)
-and sph1.FormID in(4032)
+where i.formid in(2424,4062,4031)
+and sph1.FormID in(4032,1507,4061)
 and i.docdate>='2013-01-01'
 rollback
 commit
@@ -134,7 +173,6 @@ and i.periodid='2012-07'
 update i 
 set i.prestock = 1,i.indigit = 0,i.outdigit = 0
 from imatstbalance i
-	
 where i.matcode='1.01.002.1.1.1'
 and i.stcode='1.1.756.01.01'
 and i.periodid between '2012-08' and '2012-12'
@@ -196,4 +234,36 @@ begin tran
 update imatdoc_h
 	set refCode = 'KY20130122000200'
 where DocCode='DR20130122001680'
- 
+-------------------------------
+
+ begin tran
+ update i
+  set i.docrowid=sp.rowid
+ --select a.formid, sp.DocCode,sp.MatCode,sp.rowid,i.doccode,i.matcode,i.docrowid 
+
+ from sPickorderhd a with(nolock) inner join  sPickorderitem sp with(nolock)  on a.doccode=sp.doccode
+ left join istockledgerlog i with(nolock) on sp.DocCode=i.doccode and sp.MatCode=i.matcode and sp.rowid=i.docrowid
+   inner join iMatGeneral img on sp.MatCode=img.MatCode
+ where sp.DocCode like '%201301%'
+ and a.FormID in(2419,2450,2418,4031,4032,4061,4062,2424)
+ and sp.rowid<>isnull(i.docrowid,'')
+ and img.MatState=1
+ and a.DocStatus in(1,100,200)
+ --and a.FormID=2450
+ order by a.DocDate
+ --插入丢失的明细账
+insert into istockledgerlog 
+				   (inserttime,companyid,sdorgid,periodid,plantid,matcode,stcode,batchcode,formid,doccode,docdate,doctype,
+					cltcode,vndcode,docitem,docrowid,digit,uom,baseuomrate,uomrate,baseuom,
+					indigit,outdigit,inledgerdigit,inledgeramount,outledgerdigit,outledgeramount,
+					incspdigit,outcspdigit,invspdigit,outvspdigit,salesflag,cspflag,vspflag,inouttype,end4,matcost,outrateamount)
+				   select  a.postdate,
+					companyid,sdorgid,periodid,plantid,matcode,a.stcode,batchcode,formid,a.doccode,docdate,doctype,
+					cltcode,vndcode,docitem,rowid,digit,uom,baseuomrate,uomrate,baseuom,
+					0 indigit,basedigit outdigit,0 inledgerdigit,0 inledgeramount,basedigit outledgerdigit,matcost outledgeramount,
+					0,0,0,0,1,0,0,pricememo,end4,MatCost,ratemoney
+				   from spickorderhd  a with(nolock),sPickorderitem b
+				WHERE  a.doccode in('RC20130102000140','RC20130113000760','RC20130113000020')
+	       and b.MatCode in('S6.09.17.01.09.1','S6.10.14.07.01.1','S6.09.01.03.01.2')
+	       and a.DocCode=b.DocCode
+ commit

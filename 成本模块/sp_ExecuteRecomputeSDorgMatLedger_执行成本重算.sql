@@ -1,8 +1,7 @@
 /*
 示例:
 begin tran
- 
-exec sp_ExecuteRecomputeSDorgMatLedger '2013-01-01','2013-01-31','','','','','RT20130124000000','',''
+exec sp_ExecuteRecomputeSDorgMatLedger '2013-01-01','2013-01-31','','','','S6.09.17.01.09.1,S6.09.17.01.04.1,S6.10.01.26.01.2,S6.09.17.01.07.2,S6.10.14.07.01.1,S6.09.01.03.01.2','','',''
  
 rollback
 commit
@@ -26,6 +25,40 @@ as
 		set NOCOUNT ON
 		declare @Doccode varchar(50),@FormID int,@DocDate datetime,@SDorgID1 varchar(50),@InsertTime datetime,@Stcode varchar(50)
 		declare @CompanyID1 varchar(50),@PeriodID varchar(7),@RefCode varchar(50),@RefFormID int,@tips varchar(max)
+		create TABLE #PrepareTable(
+			ID int identity(1,1),
+			Doccode varchar(50) primary key,
+			formid int not null,
+			docdate datetime not null,
+			companyid varchar(10),
+			periodid varchar(7) not null,
+			sdorgid varchar(20) not null,
+			inserttime datetime 
+		)
+		--用于输出计算结果的表变量
+	 Create Table #ResultTable (
+	 	FormID int,
+	 	Doccode varchar(20),
+	 	Refformid int,
+	 	RefCode varchar(30),
+	 	plantID varchar(20),
+	 	SDOrgID varchar(50),
+	 	Periodid varchar(7),
+ 		Matcode varchar(50),						--商品编码
+		RowID varchar(50),							--x
+ 		OldStock int,									--原库存
+ 		OldStockValue money,					--原库存金额
+ 		OldRateValue money,						--原加成金额
+		Digit int,										--修改库存量
+		Totalmoney money,						--修改库存金额
+		RateMoney money,						--修改加成金额
+ 		Stock int,										--结果库存量
+ 		StockValue money,							--结果库存金额
+ 		RateValue money,							--结果加成金额
+		Mode char,									--出入库模式 1出库正数，2出库负数，3入库正数，4入库负数
+		ComputeType  varchar(50),				--计算模式
+		OptionID varchar(50)
+	 )
 		declare cur_Doc CURSOR READ_ONLY fast_forward forward_only  for
 		--按InsertTime排序,每个单据的Inserttime相同,按Inserttime排序计算
 		Select  i.Doccode,i.formid,i.docdate,i.companyid,i.periodid,i.sdorgid, max(i.inserttime) as inserttime
@@ -85,29 +118,98 @@ as
 					BEGIN
 						select @Optionid=1
 					END
-			BEGIN TRY
-				exec sp_ReComputeSDorgMatLedger @FormID,@Doccode,@CompanyID1,@PeriodID,@SDorgID1,
-				@DocDate,@Matgroup,@Matcode,@RefFormID,@RefCode,@Optionid,@InsertTime ,@Usercode,@TerminalID
-				--串号调整，返厂返回 还需要再计算入库
-				if @FormID in(1553,1557)
-					BEGIN
-						select @Optionid=2
-						exec sp_ReComputeSDorgMatLedger @FormID,@Doccode,@CompanyID1,@PeriodID,@SDorgID1,
-						@DocDate,@Matgroup,@Matcode,@RefFormID,@RefCode,@Optionid,@InsertTime ,@Usercode,@TerminalID
-					END
-			END TRY
-			BEGIN CATCH
-				select @tips=dbo.getLastError('')
-				close cur_Doc
-				deallocate cur_doc
-				raiserror(@tips,16,1)
-				return
-			END CATCH
-				
-					fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime
+				BEGIN TRY
+					exec sp_ReComputeSDorgMatLedger @FormID,@Doccode,@CompanyID1,@PeriodID,@SDorgID1,
+					@DocDate,@Matgroup,@Matcode,@RefFormID,@RefCode,@Optionid,@InsertTime ,@Usercode,@TerminalID
+					--串号调整，返厂返回 还需要再计算入库
+					if @FormID in(1553,1557)
+						BEGIN
+							select @Optionid=2
+							exec sp_ReComputeSDorgMatLedger @FormID,@Doccode,@CompanyID1,@PeriodID,@SDorgID1,
+							@DocDate,@Matgroup,@Matcode,@RefFormID,@RefCode,@Optionid,@InsertTime ,@Usercode,@TerminalID
+						END
+				END TRY
+				BEGIN CATCH
+					select @tips=dbo.getLastError('')
+					close cur_Doc
+					deallocate cur_doc
+					raiserror(@tips,16,1)
+					return
+				END CATCH
+				fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime
 			END
 		close cur_Doc
 		deallocate cur_doc
+		----------------------------------------------------------------回填数据------------------------------------------------------------------------------
+		
+		--回填原单                  
+		--采购入库单 1509 盘盈单 1520 盘盈入库单 1599 采购退货单 1504 领料出库单 1523 盘亏单 1501 内部采购退货单 4062 盘亏出库单 1598                  
+		IF @formid IN (1509,1520,1599)                  
+		BEGIN                  
+		 UPDATE imatdoc_d SET  netmoney=isnull(a.StockValue,0)-isnull(a.OldStockValue,0), matcost=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),    
+		  rateprice=(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney =isnull( a.RateValue,0)-isnull(a.OldRateValue,0)                 
+		 FROM imatdoc_d d with(nolock) inner join #ResultTable  a on d.rowid=a.docrowid AND d.MatCode=a.Matcode AND d.DocCode=a.doccode                  
+		END                      
+		IF @formid IN (1504,1523,1501,4062,1598)      --            
+		BEGIN                  
+		 UPDATE imatdoc_d SET netprice =(isnull(a.OldStockValue,0)-isnull(a.StockValue,0))/isnull(a.Digit,0),netmoney =isnull(a.OldStockValue,0)-isnull(a.StockValue,0),                
+			 matcost=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),rateprice = (isnull(a.OldRateValue,0)-isnull(a.RateValue,0))/isnull(a.Digit,0),ratemoney = isnull(a.OldRateValue,0)-isnull(a.RateValue,0)                   
+		 FROM imatdoc_d d with(nolock) inner join #XMLDataTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=a.doccode          
+		 --UPDATE imatdoc_h SET PeriodID = @periodid,DocDate =@DocDate WHERE DocCode=@doccode AND FormID=4062               
+		END                  
+		IF @formid IN (1507,4061) --调拨入库单,内部采购入库单                  
+		BEGIN                  
+		 UPDATE imatdoc_d SET matcost= isnull(a.StockValue,0)-isnull(a.OldStockValue,0),price=(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),totalmoney=isnull( a.StockValue,0)-isnull(a.OldStockValue,0),                  
+		 netprice=(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),netmoney=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),          
+		 rateprice=(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney=isnull(a.RateValue,0)-isnull(a.OldRateValue,0)                  
+		 FROM imatdoc_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=a.doccode                  
+		END                  
+                  
+		--代销入库 4630 代销退货 4631                  
+		IF @formid IN (4630)                  
+		BEGIN                  
+		 UPDATE Commsales_d SET netmoney=isnull(a.StockValue,0)-isnull(a.OldStockValue,0), matcost=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),rateprice = (isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),          
+		 ratemoney = isnull(a.RateValue,0)-isnull(a.OldRateValue,0)                  
+		 FROM Commsales_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode                  
+		END                  
+                  
+		IF @formid IN (4631)                  
+		BEGIN                  
+		 UPDATE Commsales_d SET netmoney=isnull(a.OldStockValue,0)-isnull(a.StockValue,0), matcost=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),rateprice = (isnull(a.OldRateValue,0)-isnull(a.RateValue,0))/isnull(a.Digit,0),          
+		 ratemoney = isnull(a.OldRateValue,0)-isnull(a.RateValue,0)          
+		 FROM Commsales_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode                  
+		END                 
+                  
+		-- 返厂返回单 1557 串号调整单 1553                   
+		IF @formid IN (1557,1553)                  
+		BEGIN            
+		 IF @OptionID='1'          
+		 BEGIN          
+		  UPDATE iserieslogitem SET netprice = abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0), netmoney=abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),                
+		   rateprice = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))          
+		  FROM iserieslogitem d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode1=a.Matcode AND d.DocCode=@doccode          
+		 END          
+            
+		 IF @OptionID='2'          
+		 BEGIN          
+		  UPDATE iserieslogitem SET netprice1 =abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),netmoney1=abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),           
+		   rateprice1 = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney1 = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))                  
+		  FROM iserieslogitem d with(nolock) inner join #XMLDataTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode          
+		 END           
+		END                  
+                  
+		--批发销售出库 2401 批发销售退货 2418 零售出库单 2419 零售退货单 2420 促销出库单 2450 送货单 4950 退货单 4951                   
+		--内部销售出库单 4031 内部销售退货单 4032 调拨出库单 2424                  
+		IF @formid IN (2401,2418,2419,2420,2450,4950,4951,4031,4032,2424)                  
+		BEGIN                  
+		 UPDATE spickorderitem SET netprice = abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),netmoney =abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),                   
+			MatCostPrice = abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),MatCost =abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),                
+			rateprice = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney =abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))                  
+		 FROM spickorderitem d with(nolock) inner join #XMLDataTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode              
+           
+		  --UPDATE sPickorderHD SET periodid = @periodid,DocDate =@DocDate WHERE DocCode=@doccode AND FormID IN (2424,4031)                 
+		END                  
+ 
 	END
 	
  
