@@ -89,7 +89,7 @@ from cte b
 	and (@companyid = '' or a.plantid=@companyid)     
 	and (@matcode = '' or exists(select * from getinstr(@matcode) where list = a.matcode))
 	and (@sdorgID='' or a.sdorgid=@sdorgID)
-	and formid not in (1541,2424,1507)    
+	--and formid not in (1541,2424,1507)    
 	-- and (inledgerdigit<>0 or outledgerdigit<>0)  lzy 2004-06-04ÐÞ¸Ä    
 	order by inserttime    
     

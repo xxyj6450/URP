@@ -573,7 +573,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		if isnull(@OptionID,'') in('','1') and @ControlBalance=1
 			Begin
 				 
-				if isnull(@AvailabBalance,0)+isnull(@Commission,0)+isnull(@Rewards,0)-isnull(@ChangeCredit,0)-isnull(@ChangeFrozenAmount,0)<0
+				if isnull(@AvailabBalance,0)+isnull(@Commission,0)+isnull(@Rewards,0)-isnull(@ChangeCredit,0)-isnull(@ChangeFrozenAmount,0)+ISNULL(@OverRunLimit,0)<0
 					BEGIN
 						SELECT @tips = 
 						            '您的信用额度不足，请及时充值并确认已经通过审核的单据！' + dbo.crlf() +
