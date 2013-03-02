@@ -1,12 +1,13 @@
 /*
 示例:
 begin tran
-exec sp_ExecuteRecomputeSDorgMatLedger '2013-01-01','2013-01-31','','','','S6.09.17.01.09.1,S6.09.17.01.04.1,S6.10.01.26.01.2,S6.09.17.01.07.2,S6.10.14.07.01.1,S6.09.01.03.01.2','','',''
+exec sp_ExecuteRecomputeSDorgMatLedger '2013-01-01','2013-01-31','','','','1.01.004.2.1.2','','',''
  
 rollback
 commit
  
 */
+
 
  
 alter proc sp_ExecuteRecomputeSDorgMatLedger
@@ -25,16 +26,6 @@ as
 		set NOCOUNT ON
 		declare @Doccode varchar(50),@FormID int,@DocDate datetime,@SDorgID1 varchar(50),@InsertTime datetime,@Stcode varchar(50)
 		declare @CompanyID1 varchar(50),@PeriodID varchar(7),@RefCode varchar(50),@RefFormID int,@tips varchar(max)
-		create TABLE #PrepareTable(
-			ID int identity(1,1),
-			Doccode varchar(50) primary key,
-			formid int not null,
-			docdate datetime not null,
-			companyid varchar(10),
-			periodid varchar(7) not null,
-			sdorgid varchar(20) not null,
-			inserttime datetime 
-		)
 		--用于输出计算结果的表变量
 	 Create Table #ResultTable (
 	 	FormID int,
@@ -61,7 +52,7 @@ as
 	 )
 		declare cur_Doc CURSOR READ_ONLY fast_forward forward_only  for
 		--按InsertTime排序,每个单据的Inserttime相同,按Inserttime排序计算
-		Select  i.Doccode,i.formid,i.docdate,i.companyid,i.periodid,i.sdorgid, max(i.inserttime) as inserttime
+		Select  i.Doccode,i.formid,i.docdate,i.companyid,i.periodid,i.sdorgid, max(i.inserttime) as inserttime,max(id) as id
 		From istockledgerlog i with(nolock)
 		inner join iMatGeneral img with(nolock) on i.matcode=img.MatCode
 		inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
@@ -75,8 +66,8 @@ as
 		and (@OptionID='' or i.doccode=@OptionID)
 		and i.ID>=@StartID
 		and isnull(digit,0)<>0														--过滤掉数量为０的
-		group by i.doccode,i.formid,i.docdate,i.CompanyID,i.PeriodID,i.SDorgID,inserttime
-		order by inserttime
+		group by i.doccode,i.formid,i.docdate,i.CompanyID,i.PeriodID,i.SDorgID--,inserttime
+		order by inserttime,id
  
 		open cur_Doc
 		fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime
@@ -140,8 +131,9 @@ as
 			END
 		close cur_Doc
 		deallocate cur_doc
+		--select * from #ResultTable
 		----------------------------------------------------------------回填数据------------------------------------------------------------------------------
-		
+		/*
 		--回填原单                  
 		--采购入库单 1509 盘盈单 1520 盘盈入库单 1599 采购退货单 1504 领料出库单 1523 盘亏单 1501 内部采购退货单 4062 盘亏出库单 1598                  
 		IF @formid IN (1509,1520,1599)                  
@@ -209,7 +201,7 @@ as
            
 		  --UPDATE sPickorderHD SET periodid = @periodid,DocDate =@DocDate WHERE DocCode=@doccode AND FormID IN (2424,4031)                 
 		END                  
- 
+ */
 	END
 	
  

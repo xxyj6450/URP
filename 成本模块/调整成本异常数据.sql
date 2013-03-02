@@ -33,10 +33,22 @@ commit
  select * from iMatsdorgLedger iml where iml.sdorgid='101.05.02' and iml.MatCode='1.11.020.1.1.1'
  
  ------------------------------------------------------------修复调拔出库单plantid为空------------------------------------------------------------
- update sPickorderHD
+ begin tran
+ update a
 	set plantid=Companyid
+--select *
+from sPickorderHD a
  where FormID=2424
  and isnull(plantid,'')=''
+ --更新明细账的部门
+ update a
+	set a.sdorgid=b.sdorgid
+ from istockledgerlog a with(nolock),oStorage b with(nolock)
+ where a.stcode=b.stCode
+ and isnull(a.sdorgid,'')=''
+ and a.docdate>='2012-06-01'
+ commit
+ rollback
  --补上漏写的明细账
  exec sp_AddMatStockLedger 4062,'ICT2013020400920',''
  --补上明细账的部门编码
@@ -47,10 +59,13 @@ commit
 				--and isnull(a.sdorgid,'')=''
 				and a.docdate between '2012-06-01' and  '2012-08-01'
 --更新拒收调出单的部门
-select * 
--- update d set sdorgid=e.sdorgid,sdorgname=e.sdorgname
+begin tran
+ update d set sdorgid=e.sdorgid,sdorgname=e.sdorgname
+
+--select * 
 from spickorderhd d left join vstorage e on d.stcode=e.stcode where periodid>'2012-12' and formid=2424
 and d.sdorgid<>e.sdorgid
+commit
 ------------------------------------------------------------------调整调拔出库单核算时间-------------------------------------------------------------
 begin tran
 --先改调拔入库单
@@ -134,7 +149,7 @@ commit
 --补上后面的期间数据
 begin tran
 begin tran
-with cte(id) as(
+;with cte(id) as(
 	select 1
 	union all 
 	select 2
@@ -149,12 +164,14 @@ with cte(id) as(
 	union all 
 	select 7
 )
-insert into imatstbalance(plantid,stcode,periodid,matcode,batchcode,prestock,indigit,outdigit,preispstock,ispindigit,ispoutdigit,ispstock,prelmtstock,lmtindigit,lmtoutdigit,prertnstock,rtnoutdigit,onorderstock)
-select plantid,stcode,dbo.PeriodAdd('month',row_number() OVER (order by (select 1)),i.periodid) as  periodid,matcode,batchcode,prestock,indigit,outdigit,preispstock,ispindigit,ispoutdigit,ispstock,prelmtstock,lmtindigit,lmtoutdigit,prertnstock,rtnoutdigit,onorderstock
+insert into imatstbalance(plantid,stcode,periodid,matcode,batchcode,prestock,indigit,outdigit,preispstock,ispindigit,ispoutdigit,prelmtstock,lmtindigit,lmtoutdigit,prertnstock,rtnoutdigit,onorderstock)
+select plantid,stcode,dbo.PeriodAdd('month',row_number() OVER (order by (select 1)),i.periodid) as  periodid,matcode,batchcode,prestock,indigit,outdigit,preispstock,ispindigit,ispoutdigit,prelmtstock,lmtindigit,lmtoutdigit,prertnstock,rtnoutdigit,onorderstock
 from imatstbalance i cross JOIN cte
 where i.matcode='1.01.002.1.1.1'
 and i.stcode='1.1.756.01.01'
-and i.periodid='2012-07'
+and i.periodid='2012-06'
+
+ 
 /*
 declare @sql varchar(max)
 select @sql=''
@@ -184,10 +201,7 @@ where i.matcode='1.01.002.1.1.1'
 and i.stcode='1.1.756.01.01'
 and i.periodid ='2013-01'
 
-delete i from   imatstbalance i
-where i.matcode='1.01.002.1.1.1'
-and i.stcode='1.1.756.01.01'
-and i.periodid='2013-02'
+commit
 
 --补上成本
 insert into iMatsdorgLedger(PlantID,sdorgid,MatCode,Stock,StockValue)
@@ -235,7 +249,7 @@ update imatdoc_h
 	set refCode = 'KY20130122000200'
 where DocCode='DR20130122001680'
 -------------------------------
-
+--查询明细账与单据不匹配的数据
  begin tran
  update i
   set i.docrowid=sp.rowid
@@ -248,9 +262,10 @@ where DocCode='DR20130122001680'
  and a.FormID in(2419,2450,2418,4031,4032,4061,4062,2424)
  and sp.rowid<>isnull(i.docrowid,'')
  and img.MatState=1
- and a.DocStatus in(1,100,200)
+ and a.DocStatus=case when a.formid in(4062,4061) then 100 when a.formid in(2418,2419,2450,4031) then 200 when a.formid in(2424) then 150 end   
  --and a.FormID=2450
  order by a.DocDate
+ commit
  --插入丢失的明细账
 insert into istockledgerlog 
 				   (inserttime,companyid,sdorgid,periodid,plantid,matcode,stcode,batchcode,formid,doccode,docdate,doctype,
@@ -263,7 +278,7 @@ insert into istockledgerlog
 					0 indigit,basedigit outdigit,0 inledgerdigit,0 inledgeramount,basedigit outledgerdigit,matcost outledgeramount,
 					0,0,0,0,1,0,0,pricememo,end4,MatCost,ratemoney
 				   from spickorderhd  a with(nolock),sPickorderitem b
-				WHERE  a.doccode in('RC20130102000140','RC20130113000760','RC20130113000020')
-	       and b.MatCode in('S6.09.17.01.09.1','S6.10.14.07.01.1','S6.09.01.03.01.2')
+				WHERE  a.doccode in('RE20130104033700')
+	       and b.MatCode in('1.01.010.1.1.3')
 	       and a.DocCode=b.DocCode
  commit

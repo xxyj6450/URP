@@ -603,24 +603,29 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 			if @TranCount=0	begin tran
 			begin try
 				--更新信用额度
- 
+				print 606
 				--分布式更新需要采用动态SQL方式更新
-				If @Formid In(9102,9146,6090,9167,9244,9267,6052)
+				If @Formid In(9102,9146,6090,9167,9244,9267,6052,4950)
 					BEGIN
-						SET @sql = '	update Openquery(URP11,''SELECT FrozenAmount,Balance,ModifyDate,ModifyUser,terminalID,ModifyDoccode '+CHAR(10)
-						 + '				From JTURP.dbo.oSDOrgCredit a Where SDOrgID='''''+isnull(@AccountSdorgid,'')+''''' AND Account=''''113107'''''')' + char(10)
-						 + '				set    FrozenAmount  = isnull(FrozenAmount,0) + isnull(@ChangeFrozenAmount,0), ' + char(10)
-						 + '					   Balance       = isnull(Balance,0) -isnull(@ChangeCredit,0), ' + char(10)
-						 + '					   ModifyDate = getdate(), ' + char(10)
-						 + '					   ModifyUser = @Usercode, ' + char(10)
-						 + '					   terminalID=@TerminalID, ' + char(10)
-						 + '					   ModifyDoccode = @Doccode'
- 
-						Exec sp_executesql @sql,N'@ChangeFrozenAmount money,@ChangeCredit money, @Usercode varchar(50),@TerminalID varchar(50),@Doccode varchar(50),@AccountSdorgid varchar(50)',
-						@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,
-						@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid
-						SELECT @Rowcount=@@ROWCOUNT
- 
+						begin try
+							SET @sql = '	update Openquery(URP11,''SELECT FrozenAmount,Balance,ModifyDate,ModifyUser,terminalID,ModifyDoccode '+CHAR(10)
+							 + '				From JTURP.dbo.oSDOrgCredit a Where SDOrgID='''''+isnull(@AccountSdorgid,'')+''''' AND Account=''''113107'''''')' + char(10)
+							 + '				set    FrozenAmount  = isnull(FrozenAmount,0) + isnull(@ChangeFrozenAmount,0), ' + char(10)
+							 + '					   Balance       = isnull(Balance,0) -isnull(@ChangeCredit,0), ' + char(10)
+							 + '					   ModifyDate = getdate(), ' + char(10)
+							 + '					   ModifyUser = @Usercode, ' + char(10)
+							 + '					   terminalID=@TerminalID, ' + char(10)
+							 + '					   ModifyDoccode = @Doccode'
+							Exec sp_executesql @sql,N'@ChangeFrozenAmount money,@ChangeCredit money, @Usercode varchar(50),@TerminalID varchar(50),@Doccode varchar(50),@AccountSdorgid varchar(50)',
+							@ChangeFrozenAmount=@ChangeFrozenAmount,@ChangeCredit=@ChangeCredit,@Usercode=@Usercode,
+							@TerminalID=@TerminalID,@Doccode=@Doccode,@AccountSdorgid=@AccountSdorgid
+							SELECT @Rowcount=@@ROWCOUNT
+						end try
+						begin catch
+							select @tips=dbo.getLastError('更新信用额度失败。')
+							raiserror(@tips,16,1)
+							return
+						end catch
 						--若起始流程,则插入一条记录.
 						if @StartFlow=1
 							BEGIN
@@ -664,6 +669,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 					   ModifyUser = @Usercode,
 					   terminalID=@TerminalID,
 					   ModifyDoccode = @Doccode*/
+
 				--若不存在,则要报错
 				if @ROWCOUNT=0
 					BEGIN

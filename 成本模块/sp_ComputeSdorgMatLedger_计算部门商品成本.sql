@@ -85,9 +85,10 @@
  		@ratemap= isnull(ratevalue,0)/stock  
  		FROM iMatsdorgLedger WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode*/
  		UPDATE iMatsdorgLedger 
- 		SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit 
+ 		SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit,
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
  		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
- 		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		WHERE   sdorgid=@sdorgid AND matcode=@matcode
 		if @@Rowcount=0
 			begin
 				raiserror('无成本数据，无法处理出库成本！',16,1)
@@ -106,9 +107,10 @@
  		FROM iMatsdorgLedger 
  		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
  		*/
- 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit 
+ 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit,
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
  		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
- 		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+ 		WHERE  sdorgid=@sdorgid AND matcode=@matcode
 		if @@Rowcount=0
 			begin
 				raiserror('无成本数据，无法处理出库成本！',16,1)
@@ -122,14 +124,15 @@
   --入库  借方正数    1509,4630,1507,1520,1512,4061,1599    1553,1557--入库商品
   IF @mode=3
  	BEGIN
- 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+@digit,StockValue =isnull(stockvalue,0)+@totalmoney,ratevalue = isnull(ratevalue,0)+@ratemoney 
+ 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+@digit,StockValue =isnull(stockvalue,0)+@totalmoney,ratevalue = isnull(ratevalue,0)+@ratemoney,
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
 		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
-		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+		WHERE   sdorgid=@sdorgid AND matcode=@matcode
  		
 		if @@rowcount = 0                
-		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)      
+		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue,modifydate,modifydoccode)      
 		output inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table          
-		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney) 
+		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney,getdate(),@doccode) 
       
  		/*
  		UPDATE imatledger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney 
@@ -156,13 +159,14 @@
   --入库  贷方负数    2418,2420,4951,4032
   IF @mode=4
  	BEGIN
- 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+@digit,StockValue =isnull(stockvalue,0)+isnull(@totalmoney,0),ratevalue = isnull(ratevalue,0)+@ratemoney 
+ 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+@digit,StockValue =isnull(stockvalue,0)+isnull(@totalmoney,0),ratevalue = isnull(ratevalue,0)+@ratemoney,
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
 		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
-		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
+		WHERE   sdorgid=@sdorgid AND matcode=@matcode
 		if @@rowcount = 0                
-		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)           
+		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue,modifydate,modifydoccode)           
 		output inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table        
-		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney) 
+		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney,getdate(),@doccode) 
 		/*
  		UPDATE imatledger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney WHERE plantid=@plantid AND matcode=@matcode  
 		if @@rowcount = 0                

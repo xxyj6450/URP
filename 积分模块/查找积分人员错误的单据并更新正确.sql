@@ -10,7 +10,7 @@ end as sdgroup1
   left join oSDGroup x with(nolock)  on sl.sdgroup=x.usercode
   left join oSDGroup y with(nolock) on sl.sdgroup2=y.usercode
 where (sl.sdgroup in('SYSTEM') or len(sl.sdgroup)=11 or len(sl.sdgroup2)=11 or sl.sdgroup2='system')
-and sl.DocDate between '2013-01-01' and '2013-01-31'
+and sl.DocDate between '2013-02-01' and '2013-03-01'
 and sl.sdorgid<>'101.07.04'
 )
  select sl.DocCode,sl.DocDate,sl.sdorgid,sl.sdorgname, sl.sdgroup,sl.sdgroupname,sdgroup2,sdgroupname2,sl.DocType,sl.HDText,sdgroup1
@@ -87,6 +87,26 @@ rollback
  where a.DocCode=b.refcode
  and b.DocCode=c.Data1 
  
+ --更新返销单
+ begin tran
+update a
+	set a.sdgroup=b.sdgroup
+from Unicom_Orders a inner join Unicom_Orders b on a.refcode=b.DocCode
+and a.FormID=9244 and b.FormID=9146
+and a.DocDate>='2013-02-01'
+and a.sdgroup<>b.sdgroup
+
+ begin tran
+update a
+	set a.sdgroup=b.sdgroup
+from NumberAllocation_Log  a inner join Unicom_Orders b on a.Doccode=b.DocCode
+ 
+and a.DocDate>='2013-02-01'
+and a.sdgroup<>b.sdgroup
  rollback
  
  commit
+ 
+ select uo.sdgroup, *from Unicom_Orders uo where uo.DocCode='KHFX201302240001'
+ 
+ update

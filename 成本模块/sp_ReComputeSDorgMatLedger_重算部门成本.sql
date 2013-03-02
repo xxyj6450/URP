@@ -1,4 +1,4 @@
-alter proc sp_ReComputeSDorgMatLedger
+create proc sp_ReComputeSDorgMatLedger
 	@FormID int,											--单据功能号
 	@Doccode varchar(50),							--单据编码
 	@CompanyID varchar(50),						--公司
