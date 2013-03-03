@@ -54,6 +54,7 @@
 	 END
 --用于输出计算结果的表变量
  declare @table table(
+ 	SDOrgID varchar(50),
  	Matcode varchar(50),
 	RowID varchar(50),
  	OldStock int,
@@ -87,7 +88,7 @@
  		UPDATE iMatsdorgLedger 
  		SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit,
  		ModifyDate=getdate(),ModifyDoccode=@doccode
- 		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+ 		output @sdorgid, inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
  		WHERE   sdorgid=@sdorgid AND matcode=@matcode
 		if @@Rowcount=0
 			begin
@@ -109,7 +110,7 @@
  		*/
  		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)-@digit,StockValue =isnull(stockvalue,0)-map*@digit,ratevalue = isnull(ratevalue,0)-ratemap*@digit,
  		ModifyDate=getdate(),ModifyDoccode=@doccode
- 		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+ 		output @sdorgid,inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
  		WHERE  sdorgid=@sdorgid AND matcode=@matcode
 		if @@Rowcount=0
 			begin
@@ -126,12 +127,12 @@
  	BEGIN
  		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+@digit,StockValue =isnull(stockvalue,0)+@totalmoney,ratevalue = isnull(ratevalue,0)+@ratemoney,
  		ModifyDate=getdate(),ModifyDoccode=@doccode
-		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+		output @sdorgid,inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
 		WHERE   sdorgid=@sdorgid AND matcode=@matcode
  		
 		if @@rowcount = 0                
 		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue,modifydate,modifydoccode)      
-		output inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table          
+		output @sdorgid,inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table          
 		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney,getdate(),@doccode) 
       
  		/*
@@ -161,11 +162,11 @@
  	BEGIN
  		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+@digit,StockValue =isnull(stockvalue,0)+isnull(@totalmoney,0),ratevalue = isnull(ratevalue,0)+@ratemoney,
  		ModifyDate=getdate(),ModifyDoccode=@doccode
-		output inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
+		output @sdorgid,inserted.matcode,@RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,@Digit,@TotalMoney,@Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table
 		WHERE   sdorgid=@sdorgid AND matcode=@matcode
 		if @@rowcount = 0                
 		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue,modifydate,modifydoccode)           
-		output inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table        
+		output @sdorgid,inserted.matcode,@RowID,0,0,0,@Digit,@totalmoney,@RateMoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@Mode,@Type into @table        
 		values (@plantid,@sdorgid,@matcode,@digit,@totalmoney,@ratemoney,getdate(),@doccode) 
 		/*
  		UPDATE imatledger SET stock=stock+@digit,StockValue =stockvalue+@totalmoney,ratevalue = ratevalue+@ratemoney WHERE plantid=@plantid AND matcode=@matcode  

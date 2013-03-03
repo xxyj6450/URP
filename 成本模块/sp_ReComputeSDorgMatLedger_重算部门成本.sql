@@ -1,4 +1,4 @@
-create proc sp_ReComputeSDorgMatLedger
+alter proc sp_ReComputeSDorgMatLedger
 	@FormID int,											--单据功能号
 	@Doccode varchar(50),							--单据编码
 	@CompanyID varchar(50),						--公司
@@ -41,6 +41,7 @@ BEGIN
 	)
 	--用于输出计算结果的表变量
 	 Create Table #XMLDataTable (
+	 	SDOrgID varchar(50),
  		Matcode varchar(50),						--商品编码
 		RowID varchar(50),							--x
  		OldStock int,									--原库存
@@ -398,6 +399,8 @@ BEGIN
 			set @i=@i+1
 		END
 	*/
+ 
+	
 	--Select * From #table
 	select @XMLResult='<root>'
 	--下面用游标循环重算成本
@@ -415,6 +418,7 @@ BEGIN
 	while @@FETCH_STATUS=0
 		BEGIN
 			BEGIN TRY
+				--select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
 				--print '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ @Doccode+','+@matcode+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+'>>>>'+convert(varchar(30),getdate(),120)
 				exec sp_ComputeSdorgMatLedger @Doccode,@FormID,@rowid,@matcode,@Companyid,@sdorgid,@PeriodID,@digit,@totalmoney,@ratemoney,@mode,@type,@XMLData output
 			END TRY
@@ -449,6 +453,7 @@ BEGIN
 	exec sp_XML_RemoveDocument @hDocument
 	--print @XMLResult
 	--select * From #XMLDataTable
+	 
 	/*insert into #ResultTable(Doccode,Formid,refformid,refcode,plantid,sdorgid,periodid,matcode,rowid,
 	oldstock,oldstockvalue,oldratevalue,
 	digit,totalmoney,ratemoney,
@@ -462,6 +467,7 @@ BEGIN
 	begin try
 		
 		exec sp_outputMatLedgerResult @Doccode,@FormID,@DocDate,@Companyid,@SDOrgID ,@PeriodID,@OptionID,@Usercode,@TerminalID
+		--select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
 	end try
 	BEGIN catch
 		--select * from #table

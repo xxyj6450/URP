@@ -178,7 +178,7 @@ as
 				if @FormID in(4032)
 					BEGIN
 						select @Refcode=refCode,@PeriodID=PeriodID
-						from imatdoc_h with(nolock)
+						from spickorderhd with(nolock)
 						where DocCode=@Doccode
 						exec sp_AddMatStockLedger 4062,@Refcode,'',@UserCode,@TerminalID
 					END
@@ -278,8 +278,8 @@ as
 				       outvspdigit, salesflag, cspflag, vspflag, inouttype,matcost,outrateamount)
 				Select @companyid,@sdorgid,@PeriodID,@companyid ,img.matcode , @stcode  ,@formid  ,@doccode,@docdate ,@doctype,
 				      v.docitem ,v.rowid ,1 as digit ,img.uom ,img.baseuomrate ,img.uomrate
-				      ,img.baseuom ,0 as indigit,1 as outdigit,0 as inledgerdigit,0 as inledgeramount,1 as outledgerdigit,
-				      netmoney as outledgeramount,0 incspdigit,0 outcspdigit,0 invspdigit,0 outvspdigit,0 salesflag,0 cspflag,0 vspflag,inouttype,v.netmoney,v.ratemoney
+				      ,img.baseuom ,-1 as indigit,0 as outdigit,-1 as inledgerdigit,-netmoney as inledgeramount,0 as outledgerdigit,
+				      0 as outledgeramount,0 incspdigit,0 outcspdigit,0 invspdigit,0 outvspdigit,0 salesflag,0 cspflag,0 vspflag,inouttype,v.netmoney,v.ratemoney
 				From  iserieslogitem  v with(nolock)   
 				inner join iMatGeneral img with(nolock) on v.matcode1=img.MatCode
 				where v.DocCode=@Doccode
