@@ -1,7 +1,7 @@
 /*
 示例:
 begin tran
-exec sp_ExecuteRecomputeSDorgMatLedger '2013-01-01','2013-01-31','','','','1.01.004.2.1.2','','',''
+exec sp_ExecuteRecomputeSDorgMatLedger '2013-02-01','2013-02-28','','','','1.09.015.1.2.3.3','','',''
  
 rollback
 commit
@@ -25,7 +25,8 @@ as
 	BEGIN
 		set NOCOUNT ON
 		declare @Doccode varchar(50),@FormID int,@DocDate datetime,@SDorgID1 varchar(50),@InsertTime datetime,@Stcode varchar(50)
-		declare @CompanyID1 varchar(50),@PeriodID varchar(7),@RefCode varchar(50),@RefFormID int,@tips varchar(max)
+		declare @CompanyID1 varchar(50),@PeriodID varchar(7),@RefCode varchar(50),@RefFormID int,@tips varchar(max),@ID int
+		declare @i int,@speed money,@count int
 		--用于输出计算结果的表变量
 	 Create Table #ResultTable (
 	 	FormID int,
@@ -70,11 +71,11 @@ as
 		order by inserttime,id
  
 		open cur_Doc
-		fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime
-		
+		fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime,@ID
+		select @count=@@CURSOR_ROWS,@i=1
 		while @@FETCH_STATUS=0
 			BEGIN
- 
+				--print 100.00*@i/@count
 				--print @CompanyID1 +','+@PeriodID +','+convert(varchar(10),@FormID)+','+ @Doccode
 				--调拔入库单取出调拔出库信息
 				if @FormID  in(1507)
@@ -127,7 +128,7 @@ as
 					raiserror(@tips,16,1)
 					return
 				END CATCH
-				fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime
+				fetch next FROM cur_Doc into @Doccode,@FormID,@DocDate,@CompanyID1,@PeriodID,@SDorgID1,@InsertTime,@ID
 			END
 		close cur_Doc
 		deallocate cur_doc

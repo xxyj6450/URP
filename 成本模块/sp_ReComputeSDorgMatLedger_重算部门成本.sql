@@ -56,7 +56,7 @@ BEGIN
 		Mode char,									--出入库模式 1出库正数，2出库负数，3入库正数，4入库负数
 		ComputeType  varchar(50)				--计算模式
 	 )
-	print '计算成本:'+isnull(convert(varchar(30),@InsertTime ,120),'')+'--->'+@Companyid +','+@PeriodID +','+@SDOrgID +','+convert(varchar(10),@FormID)+','+ @Doccode+','+'>>>>'+convert(varchar(30),getdate(),120)
+	--print '计算成本:'+isnull(convert(varchar(30),@InsertTime ,120),'')+'--->'+@Companyid +','+@PeriodID +','+@SDOrgID +','+convert(varchar(10),@FormID)+','+ @Doccode+','+'>>>>'+convert(varchar(30),getdate(),120)
 	--1509采购入库单，以采购单的成本/加成成本入库,来源于sp_countcost
 	--1520盘盈入库，以工手录入成本入库
 	--1599其它入库单，以手录入成本入库
@@ -427,7 +427,8 @@ BEGIN
 				 --select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
 				select @tips= '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ @Doccode+','+@matcode+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+','+convert(varchar(50),@mode)+'>>>>'+convert(varchar(30),getdate(),120)
 				select @tips=@tips +char(10)+dbo.getLastError('成本计算发生错误.')
-				if error_number()=8134 or @matcode like '2.%'
+				print @tips
+				/*if error_number()=8134 or @matcode like '2.%'
 					BEGIN
 						print @tips
 					END
@@ -435,7 +436,7 @@ BEGIN
 				BEGIN
 						raiserror(@tips,16,1)
 						return
-					END
+					END*/
 			END CATCH
 			
 			--若输出了数据,则连接到XML结果串
