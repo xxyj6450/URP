@@ -16,18 +16,63 @@
  */  
 
  alter PROC sp_BatchComputeSdorgMatLedger(  
-  @doccode VARCHAR(50),  --单号  
-  @formid VARCHAR(10),     --功能号  
-  @plantid VARCHAR(50),  --公司编号  
-  @sdorgid VARCHAR(50),  --部门编号  
-  @periodid VARCHAR(10)  --期间  
+  @doccode VARCHAR(50),		--单号  
+  @formid VARCHAR(10),		--功能号
+  @DocDate datetime,			--单据日期
+  @plantid VARCHAR(50),		--公司编号  
+  @sdorgid VARCHAR(50),		--部门编号  
+  @periodid VARCHAR(10),		--期间
+  @Mode int,
+  @ComputeType varchar(50)='',
+  @OptionID varchar(50)='',
   @ResultXML nvarchar(max)='' output
  )  
  AS  
  BEGIN
  	 SET NOCOUNT ON  
  	 declare @tips varchar(max)
- 	IF @formid IN (1512) SET b.digit=0
+ 	 --用于输出计算结果的表变量
+	 /* Create Table #ResultTable (
+	 	FormID int,
+	 	Doccode varchar(20),
+	 	Refformid int,
+	 	RefCode varchar(30),
+	 	plantID varchar(20),
+	 	SDOrgID varchar(50),
+	 	Periodid varchar(7),
+ 		Matcode varchar(50),						--商品编码
+		RowID varchar(50),							--x
+ 		OldStock int,									--原库存
+ 		OldStockValue money,					--原库存金额
+ 		OldRateValue money,						--原加成金额
+		Digit int,										--修改库存量
+		Totalmoney money,						--修改库存金额
+		RateMoney money,						--修改加成金额
+ 		Stock int,										--结果库存量
+ 		StockValue money,							--结果库存金额
+ 		RateValue money,							--结果加成金额
+		Mode char,									--出入库模式 1出库正数，2出库负数，3入库正数，4入库负数
+		ComputeType  varchar(50),				--计算模式
+		OptionID varchar(50)
+	 ) 
+	 create table #table  (
+		ID int identity(1,1),
+		FormID int,
+		Doccode varchar(50),
+		PeriodID varchar(50),
+		PlantID varchar(50),
+		SDOrgID varchar(50),
+		Seriescode varchar(50),
+		matcode varchar(50),
+		Rowid varchar(50),
+		digit int DEFAULT 0,
+		totalmoney money default 0,
+		ratemoney money DEFAULT 0,
+		Mode int DEFAULT 0,
+		ComputeType varchar(50) DEFAULT ''
+	)
+	*/
+
 	IF isnull(@plantid,'')=''  
 	 BEGIN  
 		 RAISERROR('出库时,公司为空值,过帐错误!',16,1)  
@@ -50,7 +95,9 @@
 	 END
 --用于输出计算结果的表变量
  declare @table table(
+ 	SDorgID varchar(50),
  	Matcode varchar(50),
+ 	Seriescode varchar(50),
 	RowID varchar(50),
  	OldStock int,
  	OldStockValue money,
@@ -65,61 +112,101 @@
 	ComputeType  varchar(50)
  )
  
+ 
   ---------------------出库 取移动加权平均成本-------------------------
   --出库  贷方正数     4631,2401,2419,2450,4950,2424,1523,1501,4031,1598   
-  IF b.mode=1 
+    IF @MODE=1 
  	BEGIN
- 		UPDATE a 
- 		SET stock=isnull(stock,0)-b.digit,StockValue =isnull(stockvalue,0)-map*b.digit,ratevalue = isnull(ratevalue,0)-ratemap*b.digit 
- 		output inserted.matcode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.digit,b.totamoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,b.mode,b.type into @table
- 		from iMatsdorgLedger a inner join #table b
- 		on plantid=@plantid and sdorgid=@sdorgid AND matcode=b.matcode
-		if @@Rowcount=0
+ 		
+ 		UPDATE  a
+ 		SET stock=isnull(stock,0)-isnull(b.digit,0),StockValue =isnull(stockvalue,0)-isnull(map,0)*isnull(b.digit,0),ratevalue = isnull(ratevalue,0)-isnull(ratemap,0)*isnull(b.digit,0),
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
+ 		output @sdorgid, inserted.matcode,b.seriescode,b.RowID,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.Digit,
+ 		b.TotalMoney,b.Ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@MODE,b.ComputeType into @table
+ 		From iMatsdorgLedger a with(nolock) inner join #table b on a.sdorgid=@sdorgid and a.MatCode=b.matcode
+		SET @tips='部门['+@sDOrgID+']'
+ 		select @tips=@tips+'商品['+a.matcode+']无成本数据，无法处理出库成本.'+char(10)
+ 		from #table a 
+		where not exists(select 1 from @table b where a.matcode=b.Matcode)  
+ 		if @@Rowcount<>0
 			begin
-				raiserror('无成本数据，无法处理出库成本！',16,1)
-				return
+				raiserror(@tips,16,1)
 			end 
  		END
   --出库  借方负数     1504,4062      1553,1557--出库商品
-  IF b.mode=2
- 	BEGIN	
- 		UPDATE a SET stock=isnull(stock,0)-b.digit,StockValue =isnull(stockvalue,0)-map*b.digit,ratevalue = isnull(ratevalue,0)-ratemap*b.digit 
- 		output inserted.matcode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.digit,b.totamoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,b.mode,b.type into @table
- 		from iMatsdorgLedger a,#table b
- 		on plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
-		if @@Rowcount=0
+  IF @MODE=2
+ 	BEGIN
+ 		UPDATE a SET stock=isnull(stock,0)-isnull(b.digit,0),StockValue =isnull(stockvalue,0)-isnull(map,0)*isnull(b.digit,0),ratevalue = isnull(ratevalue,0)-isnull(ratemap,0)*isnull(b.digit,0),
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
+ 		output @sdorgid,inserted.matcode,b.seriescode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.digit,b.totalmoney,
+ 		b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@MODE,b.ComputeType into @table
+ 		From iMatsdorgLedger a with(nolock) inner join #table b on a.sdorgid=@sdorgid and a.MatCode=b.matcode
+ 		SET @tips='部门['+@sDOrgID+']'
+ 		select @tips=@tips+'商品['+a.matcode+']无成本数据，无法处理出库成本.'+char(10)
+ 		from #table a 
+		where not exists(select 1 from @table b where a.matcode=b.Matcode)  
+ 		if @@Rowcount<>0
 			begin
-				raiserror('无成本数据，无法处理出库成本！',16,1)
+				raiserror(@tips,16,1)
 			end 
- 	END
+ 		END
   ---------------------入库 取入库成本------------------------
   --入库  借方正数    1509,4630,1507,1520,1512,4061,1599    1553,1557--入库商品
-  IF b.mode=3
+  IF @MODE=3
  	BEGIN
- 		UPDATE a SET stock=isnull(stock,0)+b.digit,StockValue =isnull(stockvalue,0)+b.totamoney,ratevalue = isnull(ratevalue,0)+b.ratemoney 
-		output inserted.matcode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.digit,b.totamoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,b.mode,b.type into @table
- 		from iMatsdorgLedger a inner join #table b
- 		on plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
- 		
-		if @@rowcount = 0                
-		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)      
-		output inserted.matcode,b.rowid,0,0,0,b.digit,b.totamoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,b.mode,b.type into @table          
-		Select @plantid,@sdorgid,@matcode,b.digit,b.totamoney,b.ratemoney
-		From #table b 
-      
-		--回填原单
+ 		UPDATE a 
+ 		SET stock=isnull(stock,0)+isnull(b.digit,0),StockValue =isnull(stockvalue,0)+isnull(b.totalmoney,0),ratevalue = isnull(ratevalue,0)+isnull(b.ratemoney,0),
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
+		output @sdorgid,inserted.matcode,b.seriescode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,
+		b.digit,b.totalmoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@MODE,b.ComputeType 
+		into @table
+		From iMatsdorgLedger a with(nolock) inner join #table b on a.sdorgid=@sdorgid and a.MatCode=b.matcode
+ 
+ 		--将未更新到的行插入至成本表
+		if @@rowcount = 0
+			BEGIN
+				insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue,modifydate,modifydoccode)           
+				output @sdorgid,inserted.matcode,0,0,0,inserted.stock,inserted.stockvalue,inserted.ratevalue,@MODE,@ComputeType
+				 into @table(SDorgID,Matcode,OldStock,OldStockValue,OldRateValue,Stock,StockValue,RateValue,Mode,ComputeType)
+				select @plantid,@sdorgid,a.matcode,isnull(a.digit,0),isnull(a.totalmoney,0),isnull(a.ratemoney,0),getdate(),@doccode
+				from #table as a  
+				where not exists(select 1 from @table b where a.matcode=b.Matcode)   
+				update a
+					set a.Seriescode=b.seriescode,a.rowid=b.rowid,a.Digit=b.digit,a.Totalmoney=b.totalmoney,a.RateMoney=b.ratemoney
+				from @table a,#table b
+				where a.matcode=b.matcode
+			END
  	END
   --入库  贷方负数    2418,2420,4951,4032
-  IF b.mode=4
+  IF @MODE=4
  	BEGIN
- 		UPDATE iMatsdorgLedger SET stock=isnull(stock,0)+b.digit,StockValue =isnull(stockvalue,0)+isnull(b.totamoney,0),ratevalue = isnull(ratevalue,0)+b.ratemoney 
-		output inserted.matcode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.digit,b.totamoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,b.mode,b.type into @table
-		WHERE plantid=@plantid and sdorgid=@sdorgid AND matcode=@matcode
-		if @@rowcount = 0                
-		insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue)           
-		output inserted.matcode,b.rowid,0,0,0,b.digit,b.totamoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,b.mode,b.type into @table        
-		values (@plantid,@sdorgid,@matcode,b.digit,b.totamoney,b.ratemoney) 
+ 		UPDATE a
+ 		 SET stock=isnull(stock,0)+b.digit,StockValue =isnull(stockvalue,0)+isnull(b.totalmoney,0),ratevalue = isnull(ratevalue,0)+isnull(b.ratemoney,0),
+ 		ModifyDate=getdate(),ModifyDoccode=@doccode
+		output @sdorgid,inserted.matcode,b.seriescode,b.rowid,deleted.stock,deleted.stockvalue,deleted.ratevalue,b.digit,
+		b.totalmoney,b.ratemoney,inserted.stock,inserted.stockvalue,inserted.ratevalue,@MODE,b.ComputeType into @table
+		From iMatsdorgLedger a with(nolock) inner join #table b on a.sdorgid=@sdorgid and a.MatCode=b.matcode
+		if @@rowcount = 0
+			BEGIN
+				insert into iMatsdorgLedger (plantid,sdorgid,matcode,stock,stockvalue,ratevalue,modifydate,modifydoccode)           
+				output @sdorgid,inserted.matcode,0,0,0,inserted.stock,inserted.stockvalue,inserted.ratevalue,@MODE,@ComputeType
+				 into @table(SDorgID,Matcode,OldStock,OldStockValue,OldRateValue,Stock,StockValue,RateValue,Mode,ComputeType)
+				 select @plantid,@sdorgid,a.matcode,isnull(a.digit,0),isnull(a.totalmoney,0),isnull(a.ratemoney,0),getdate(),@doccode
+				from #table as a  
+				where not exists(select 1 from @table b where a.matcode=b.Matcode)   
+				update a
+					set a.Seriescode=b.seriescode,a.rowid=b.rowid,a.Digit=b.digit,a.Totalmoney=b.totalmoney,a.RateMoney=b.ratemoney
+				from @table a,#table b
+				where a.matcode=b.matcode
+			END
 		
+		--values (@plantid,@sdorgid,b.matcode,b.digit,b.totalmoney,b.ratemoney,getdate(),@doccode) 
+	
 	END 
-    select @resultxml=(select * From @table For XML RAW)
+	select *from @table
+    insert into #ResultTable(Doccode,FormID,Docdate, SDOrgID,Matcode,Seriescode,RowID,OldStock,OldStockValue,OldRateValue,Digit,Totalmoney,ratemoney,Stock,StockValue,RateValue,Mode,ComputeType,OptionID)
+    select @doccode,@formid,@DocDate, @sdorgid,a.Matcode,a.seriescode,a.RowID,a.OldStock,a.OldStockValue,a.OldRateValue,a.Digit,a.Totalmoney,a.RateMoney,a.Stock,a.StockValue,a.RateValue,a.Mode,a.ComputeType,@OptionID
+    from @table a
+     select @resultxml=(select * From @table For XML RAW)
+     print @ResultXML
 END

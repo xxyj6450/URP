@@ -1,4 +1,4 @@
-CREATE  proc sp_outputMatLedgerResult                  
+alter  proc sp_outputMatLedgerResult                  
   @doccode VARCHAR(50),  --单号                      
   @formid VARCHAR(10),     --功能号            
   @DocDate DATETIME,                       --                      
@@ -87,27 +87,30 @@ END
 ---写库存明细账                  
 IF @formid IN (1509,1520,1599,1507,4061,4630) --借方正                  
 BEGIN                  
- UPDATE istockledgerlog SET inledgeramount=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),inrateamount=isnull(a.RateValue,0)-isnull(a.OldRateValue,0),matcost=isnull(a.StockValue,0)-isnull(a.OldRateValue,0)                 
+ UPDATE istockledgerlog 
+ SET inledgeramount=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),
+ inrateamount=isnull(a.RateValue,0)-isnull(a.OldRateValue,0),
+ matcost=isnull(a.StockValue,0)-isnull(a.OldRateValue,0),UpdateDate = getdate()                 
  FROM istockledgerlog d with(nolock) inner join #XMLDataTable a on d.docrowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode                  
 END                  
 IF @formid IN (1504,4062) --借方负         --         
 BEGIN                  
  UPDATE istockledgerlog SET inledgeramount=-1*(isnull(a.OldStockValue,0)-isnull(a.StockValue,0)),inrateamount=-1*(isnull(a.OldRateValue,0)-isnull(a.RateValue,0)),                
-       matcost=-1*(isnull(a.OldStockValue,0)-isnull(a.StockValue,0)),periodid=@periodid,docdate=@DocDate                  
+       matcost=-1*(isnull(a.OldStockValue,0)-isnull(a.StockValue,0)),periodid=@periodid,docdate=@DocDate,UpdateDate = getdate()                  
  FROM istockledgerlog d with(nolock) inner join #XMLDataTable a on d.docrowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode            
 END      
       
 IF @formid IN (4631)      
 BEGIN      
  UPDATE istockledgerlog SET outledgeramount=abs(isnull(a.OldStockValue,0)-isnull(a.StockValue,0)),outrateamount=abs(isnull(a.OldRateValue,0)-isnull(a.RateValue,0)),            
-    matcost=abs(isnull(a.OldStockValue,0)-isnull(a.StockValue,0)),periodid=@periodid,docdate=@DocDate                  
+    matcost=abs(isnull(a.OldStockValue,0)-isnull(a.StockValue,0)),periodid=@periodid,docdate=@DocDate ,UpdateDate = getdate()                 
  FROM istockledgerlog d with(nolock) inner join #XMLDataTable a on d.docrowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode        
 END                
                   
 IF @formid IN (1523,1501,1598,2401,2419,2450,4950,4031,2424) --贷方正                  
 BEGIN                  
  UPDATE istockledgerlog SET outledgeramount=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),outrateamount=isnull(a.OldRateValue,0)-isnull(a.RateValue,0),            
-    matcost=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),periodid=@periodid,docdate=@DocDate                  
+    matcost=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),periodid=@periodid,docdate=@DocDate,UpdateDate = getdate()                  
  FROM istockledgerlog d with(nolock) inner join #XMLDataTable a on d.docrowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode
  
 END                  
@@ -115,7 +118,7 @@ END
 IF @formid IN (2418,2420,4951,4032) --贷方负                  
 BEGIN       
  UPDATE istockledgerlog SET outledgeramount=-1*(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),outrateamount=-1*(isnull(a.RateValue,0)-isnull(a.OldRateValue,0)),                
-        matcost=-1*(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))                  
+        matcost=-1*(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),UpdateDate = getdate()                  
  FROM istockledgerlog d with(nolock) inner join #XMLDataTable a on d.docrowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode                 
            
  --select * from istockledgerlog i where i.doccode=@Doccode          
@@ -127,20 +130,17 @@ BEGIN
         
  IF @OptionID='1'          
  BEGIN          
-  UPDATE  istockledgerlog  SET inledgeramount= -1*isnull(a.netmoney,0),inrateamount= -1*isnull(a.ratemoney,0),matcost= -1*isnull(a.netmoney,0)                  
-  FROM istockledgerlog d with(nolock) inner join iserieslogitem a on d.doccode=a.doccode AND d.MatCode=a.matcode1 AND a.DocCode=@doccode AND isnull(d.indigit,0)<0        
-          
-  UPDATE  istockledgerlog  SET indigit = -1, inledgeramount= -1*isnull(a.netmoney,0),inrateamount= -1*isnull(a.ratemoney,0),matcost= -1*isnull(a.netmoney,0)                  
-  FROM istockledgerlog d with(nolock) inner join iserieslogitem a on d.doccode=a.doccode AND d.MatCode=a.matcode1 AND a.DocCode=@doccode AND isnull(d.outdigit,0)<>0        
+  UPDATE  istockledgerlog  SET inledgeramount= -1*isnull(a.netmoney,0),inrateamount= -1*isnull(a.ratemoney,0),matcost= -1*isnull(a.netmoney,0),UpdateDate = getdate()                  
+  FROM istockledgerlog d with(nolock) inner join iserieslogitem a on d.doccode=a.doccode AND d.MatCode=a.matcode1 AND a.DocCode=@doccode AND isnull(d.indigit,0)<0          
  END          
             
  IF @OptionID='2'          
  BEGIN          
-  UPDATE  istockledgerlog  SET inledgeramount= isnull(a.netmoney1,0),inrateamount= isnull(a.ratemoney1,0),matcost=isnull(a.netmoney1,0)                  
+  UPDATE  istockledgerlog  SET inledgeramount= isnull(a.netmoney1,0),inrateamount= isnull(a.ratemoney1,0),matcost=isnull(a.netmoney1,0),UpdateDate = getdate()
   FROM istockledgerlog d with(nolock) inner join iserieslogitem a on d.doccode=a.doccode AND d.MatCode=a.matcode AND a.DocCode=@doccode AND isnull(d.indigit,0)>0          
  END           
 END                  
-                  /*
+/*
 ---写销售明细账                  
 IF @formid IN (2401,2419,2450,4950)                  
 BEGIN                  

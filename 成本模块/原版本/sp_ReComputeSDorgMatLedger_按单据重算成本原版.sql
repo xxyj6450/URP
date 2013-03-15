@@ -1,4 +1,4 @@
-alter proc sp_ReComputeSDorgMatLedger
+alter proc [dbo].[sp_ReComputeSDorgMatLedger]
 	@FormID int,											--单据功能号
 	@Doccode varchar(50),							--单据编码
 	@CompanyID varchar(50),						--公司
@@ -39,7 +39,23 @@ BEGIN
 		Mode int DEFAULT 0,
 		ComputeType varchar(50) DEFAULT ''
 	)
-	
+	--用于输出计算结果的表变量
+	 Create Table #XMLDataTable (
+	 	SDOrgID varchar(50),
+ 		Matcode varchar(50),						--商品编码
+		RowID varchar(50),							--x
+ 		OldStock int,									--原库存
+ 		OldStockValue money,					--原库存金额
+ 		OldRateValue money,						--原加成金额
+		Digit int,										--修改库存量
+		Totalmoney money,						--修改库存金额
+		RateMoney money,						--修改加成金额
+ 		Stock int,										--结果库存量
+ 		StockValue money,							--结果库存金额
+ 		RateValue money,							--结果加成金额
+		Mode char,									--出入库模式 1出库正数，2出库负数，3入库正数，4入库负数
+		ComputeType  varchar(50)				--计算模式
+	 )
 	print '计算成本:'+isnull(convert(varchar(30),@InsertTime ,120),'')+'--->'+@Companyid +','+@PeriodID +','+@SDOrgID +','+convert(varchar(10),@FormID)+','+ @Doccode+','+'>>>>'+convert(varchar(30),getdate(),120)
 	--1509采购入库单，以采购单的成本/加成成本入库,来源于sp_countcost
 	--1520盘盈入库，以工手录入成本入库
@@ -50,7 +66,7 @@ BEGIN
 		select  a.matcode,a.rowid,a.Digit,a.netmoney,a.netmoney,3,''
 		From imatdoc_d a with(nolock)
 		where a.DocCode=@Doccode
-		Select @mode=3
+		 
 		--UPDATE imatdoc_d SET rateprice = netprice,ratemoney = netmoney WHERE doccode=@doccode
 		--SELECT netprice,ratemoney,* FROM vCommsales WHERE doccode='GDR2013020200000'
 	END
@@ -61,7 +77,6 @@ BEGIN
 			select  a.matcode,a.rowid,a.Digit,a.netmoney,a.ratemoney,2,''
 			From imatdoc_d a with(nolock)
 			where a.DocCode=@Doccode
-			Select @mode=2
 		END
 	--1501,1598其他出库单,盘亏出库单,以单据金额计算成本
 	if @FormID in(1501,1598)
@@ -70,7 +85,6 @@ BEGIN
 			select  a.matcode,a.rowid,a.Digit,a.netmoney,a.ratemoney,1,''
 			From imatdoc_d a with(nolock)
 			where a.DocCode=@Doccode
-			Select @mode=1
 		END
 	--4630受托代销入库单，以入库的成本/加成成本入库,来源于[sp_countcost]
 	IF @formid IN (4630)  --代销入库单
@@ -79,7 +93,6 @@ BEGIN
 		select a.matcode,a.rowid,a.Digit,a.netmoney,a.netmoney,3,''
 		from Commsales_d a with(nolock) 
 		where a.DocCode=@Doccode 
-		Select @mode=1
 		--UPDATE Commsales_d SET rateprice = netprice,ratemoney = netmoney WHERE doccode=@doccode
 	END
 	--4631 供应商代销退货单,以单据上金额出库
@@ -89,16 +102,14 @@ BEGIN
 			select a.matcode,a.rowid,a.Digit,a.netmoney,a.ratemoney,1,''
 			from Commsales_d a with(nolock) 
 			where a.DocCode=@Doccode 
-			Select @mode=1
 		END
 	--零售销售单
 	if @FormID in(2419,2401,2450,4950)
 		BEGIN
-			insert into #table(matcode,seriescode,Rowid,digit,totalmoney,ratemoney,Mode,ComputeType)
-			select sp.MatCode,sp.seriescode,sp.rowid,digit,netmoney,sp.ratemoney,1,''					
+			insert into #table(matcode,Rowid,digit,totalmoney,ratemoney,Mode,ComputeType)
+			select sp.MatCode,sp.rowid,digit,netmoney,sp.ratemoney,1,''					
 			from sPickorderitem sp with(nolock)
 			where sp.DocCode=@Doccode
-			Select @mode=1
 		END
 	--有库存就取库存成本,没库存就取源销售单成本,若无源销售单,则取最近一次销售成本.
 	IF @formid IN (2420) --销售退货单取销售出库单成本入库
@@ -115,6 +126,7 @@ BEGIN
 						inner join iMatGeneral img with(nolock) on sp.matcode=img.MatCode
 						where sp.DocCode=@Doccode
 						and img.MatState=1								--只处理做库存管理的商品
+		
 		--若有商品无库存成本，则尝试从源单据取
 		if exists(select 1 from #table where totalmoney is null)
 			BEGIN
@@ -125,13 +137,7 @@ BEGIN
 						--insert into #table(matcode,Rowid,digit,totalmoney,ratemoney,Mode,ComputeType)
 						--select sp.MatCode,sp.rowid,sp.digit,sph.MatCost,sph.ratemoney,4,''			--改用matcost,不用netmoney,因为前期许多单据没写netmoney
 						update sp
-							set totalmoney = sph.MatCost,ratemoney =case when isnull(sph.ratemoney,0)=0 then sph.matcost else  sph.ratemoney end
-						from #table sp with(nolock) 
-						inner join #ResultTable  sph with(nolock) on sp.DocCode=@Doccode  AND sph.DocCode=@refcode AND   sp.MatCode=sph.MatCode And isnull(sp.seriesCode,'')=isnull(sph.seriesCode,'')
-						where sp.totalmoney is null						--只处理金额为NULL的数据
-						if @@ROWCOUNT=0
-						update sp
-							set totalmoney = sph.MatCost,ratemoney = case when isnull(sph.ratemoney,0)=0 then sph.matcost else  sph.ratemoney end
+							set totalmoney = sph.MatCost,ratemoney =case when sph.DocCode<'RE2013' and isnull(sph.ratemoney,0)=0 then sph.MatCost else  sph.ratemoney end
 						from #table sp with(nolock) 
 						inner join sPickorderitem  sph with(nolock) on sp.DocCode=@Doccode  AND sph.DocCode=@refcode AND   sp.MatCode=sph.MatCode And isnull(sp.seriesCode,'')=isnull(sph.seriesCode,'')
 						where sp.totalmoney is null						--只处理金额为NULL的数据
@@ -140,6 +146,7 @@ BEGIN
 								raiserror('未能正常关联退货单与销售单,无法处理退货成本.',16,1)
 								return
 							END	
+							
 					END
 				--若没有退货单,则取此商品在此门店的最后一次出库成本
 				else
@@ -160,7 +167,6 @@ BEGIN
 						--当然除了除数为0或为NULL,金额也可能为0,就将金额转成NULL,然后转向取inledgeramount,这个转向是靠coalesce实现的
 						--当然,任何表达式的结果可能为NULL,而我们不希望成本为NUL,所以最外层有一个ISNULL,将可能的NULL转换成0
 						--要是还看不懂的话你可以骂我,但千恨不要来问我,因为明天我也会完全忘记这段表达式的含义,同时也包括上面的说明文字.
-						--后面2418功能号还补充了一点说明，可以参考
 						--2013-02-02 03:26 三断笛
 						update a
 							set a.totalmoney=isnull(
@@ -179,11 +185,9 @@ BEGIN
 								)
 						from   istockledgerlog i with(nolock)  inner join cte b on i.id=b.id inner join #table a on b.rowid=a.Rowid and a.matcode=b.matcode
 						where a.totalmoney is null
-
 				END
 			END
-			Select @mode=4
-			--select * From #table
+			
 			--若经匹配后,发现有商品没有最后一次出库记录,则抛出异常,没有成本也想退货?
 			select @tips=''
 			select @tips=@tips+'商品'+ a.matcode+'未取到出库成本，无法退货。'+char(10)
@@ -201,7 +205,6 @@ BEGIN
 				select @Doccode,@FormID, @CompanyID,@PeriodID,@SDOrgID, sp.MatCode,sp.rowid,isnull(digit,0),isnull(sp.netmoney,0),isnull(sp.ratemoney,0),1,''
 				from sPickorderitem sp with(nolock) 
 				where sp.DocCode=@Doccode
-				Select @mode=1
 				--and isnull(sp.Digit,0)<>0
 		END
 	--公司内采购退货,来源于sp_delloutcost
@@ -211,7 +214,6 @@ BEGIN
 				select sp.MatCode,sp.rowid,isnull(digit,0),isnull(sp.netmoney,0),isnull(sp.ratemoney,0),2,''
 				from imatdoc_d sp with(nolock) 
 				where sp.DocCode=@Doccode
-				Select @mode=2
 				--select * from iMatsdorgLedger iml where iml.sdorgid='101.05.02' and matcode='1.11.013.1.1.1'
 	END
 	--调拔入库单,先处理出库,再处理入库.
@@ -250,7 +252,6 @@ BEGIN
 				from imatdoc_d sp with(nolock) inner join sPickorderitem sph with(nolock)
 				on sp.DocCode=@Doccode and sph.DocCode=@RefCode and sp.MatCode=sph.MatCode
 			END
-			Select @mode=3
 	END
 	--4061内部采购入库，以内部批发销售出库成本入库，子公司加成成本加点数
 	IF @formid IN (4061) --内部采购入库取销售出库成本
@@ -280,7 +281,6 @@ BEGIN
 		on a.MatCode=b.MatCode
 		and a.DocCode=@Doccode
 		and b.DocCode=@RefCode
-		Select @mode=3
 	END
 	--4032内部销售退货，以内部采购退货的出库成本入库
 	IF @formid IN (4032)
@@ -317,7 +317,6 @@ BEGIN
 				raiserror('内部销售退货单未取得对应的采购退货单据',16,1)
 				return
 			END
-		Select @mode=4
 		--select * from #table a,iMatsdorgLedger iml where a.matcode=iml.MatCode and iml.sdorgid=@SDOrgID
 		
 	END
@@ -344,25 +343,10 @@ BEGIN
 				--2013-02-02 03:26 三断笛
 				isnull(abs(coalesce(nullif(1.0000*i.outledgeramount/nullif(i.outledgerdigit,0),0),nullif(1.0000*i.inledgeramount/nullif(i.inledgerdigit,0),0))),0),
 				--哈哈哈哈，下面这句看瞎你！
-				isnull(
-					--isnull的第一个参数开始
-					nullif(
-						isnull(
-							abs(
-								coalesce(
-									nullif(1.0000*i.outrateamount/nullif(i.outledgerdigit,0),0),
-									nullif(1.0000*i.inrateamount/nullif(i.inledgerdigit,0),0)
-								--coalesce结束
-								)
-							--abs结束
-							)
-						--isnull结束
-						,0)
-					--nullif结束
-					,0),
-					--最外层isnull的第二个参数开始，下面这句即成本。也就是说，当取不到加成成本时，直接以成本入库
+				isnull(nullif(isnull(abs(coalesce(nullif(1.0000*i.outrateamount/nullif(i.outledgerdigit,0),0),nullif(1.0000*i.inrateamount/nullif(i.inledgerdigit,0),0))),0),0),
 					isnull(abs(coalesce(nullif(1.0000*i.outledgeramount/nullif(i.outledgerdigit,0),0),nullif(1.0000*i.inledgeramount/nullif(i.inledgerdigit,0),0))),0)),4,''
 				from istockledgerlog i with(nolock)  right join cte b on i.id=b.id			--此处用外连接,取出单据所有商品的最后出库数据
+				--select * From #table
 			--将有库存商品的成本更新为及时成本
 			update a
 				set a.totalmoney=a.digit*isnull(1.0000*iml.StockValue/nullif(iml.Stock,0),0),
@@ -371,7 +355,6 @@ BEGIN
 			on a.matcode=iml.MatCode
 			and iml.sdorgid=@SDOrgID
 			and iml.Stock>0
-			Select @mode=4
 	END
 	--串号调整，返厂返回
 	--1553串号调整单，1557返厂返回单，以库存成本入库，如没库存，则以出库成本入库,不管商品是否相同
@@ -393,7 +376,6 @@ BEGIN
 				from #table a inner join iMatsdorgLedger iml with(nolock)
 					on a.matcode=iml.MatCode
 					and iml.sdorgid=@SDOrgID
-					Select @mode=2
 					--注：执行完这里后，会执行成本计算，并输出成本到出库成本字段，供入库使用
 			END
 		--再处理入库 以库存成本入库，如没库存，则以出库成本入库,不管商品是否相同
@@ -404,7 +386,6 @@ BEGIN
 				Select i.matcode,i.rowid,1,netmoney,netmoney,3,''
 				From iserieslogitem i with(nolock)
 				where i.doccode=@Doccode
-				Select @mode=3
 				/*--若有库存，则更新至即时成本
 				update a
 					set a.totalmoney=a.digit*isnull(1.0000*iml.StockValue/nullif(iml.Stock,0),0),
@@ -435,90 +416,62 @@ BEGIN
 			set @i=@i+1
 		END
 	*/
-	Delete a
-	From #table a  inner join iMatGeneral img with(nolock) on a.MatCode=img.MatCode
-				inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
-	where not(  (@InputMatcode='' or exists(select 1 from commondb.dbo.SPLIT(isnull(@InputMatcode,''),',') s where img.MatCode=s.List))
-				and (@InputMatgroup='' or  exists(select 1 from commondb.dbo.SPLIT(isnull(@InputMatgroup,''),',') s where img2.PATH like '%/'+s.List+'/%'))
-				and isnull(a.digit,0)<>0										--数量为0的商品忽略
-				and isnull(img.MatState,0)=1								--非库存商品过滤
-				)
-	Select * From #table
+ 
+	
+	--Select * From #table
 	select @XMLResult='<root>'
-	if exists( select 1 from #table
-		group by matcode
-		having count(matcode)>1
-	)
-	BEGIN
-		--下面用游标循环重算成本
-			declare cur CURSOR READ_ONLY fast_forward forward_only for
-			select a.matcode,a.Rowid,a.digit,a.totalmoney,a.ratemoney,a.Mode,a.ComputeType
-			From #table a  inner join iMatGeneral img with(nolock) on a.MatCode=img.MatCode
-				inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
-			where  (@InputMatcode='' or exists(select 1 from commondb.dbo.SPLIT(isnull(@InputMatcode,''),',') s where img.MatCode=s.List))
-				and (@InputMatgroup='' or  exists(select 1 from commondb.dbo.SPLIT(isnull(@InputMatgroup,''),',') s where img2.PATH like '%/'+s.List+'/%'))
-				and isnull(a.digit,0)<>0										--数量为0的商品忽略
-				and isnull(img.MatState,0)=1								--非库存商品过滤
-			order by a.ID
-			open cur
-			fetch next FROM cur into @matcode,@rowid,@digit,@totalmoney,@ratemoney,@mode,@type
-			while @@FETCH_STATUS=0
-				BEGIN
-					BEGIN TRY
-						--select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
-						--print '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ @Doccode+','+@matcode+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+'>>>>'+convert(varchar(30),getdate(),120)
-						exec sp_ComputeSdorgMatLedger @Doccode,@FormID,@DocDate ,@rowid,@matcode,@Companyid,@sdorgid,@PeriodID,@digit,@totalmoney,@ratemoney,@mode,@type,@OptionID ,@XMLData output
-					END TRY
-					BEGIN CATCH
-						 --select * from #table
-						 --select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
-						select @tips= '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ @Doccode+','+@matcode+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+','+convert(varchar(50),@mode)+'>>>>'+convert(varchar(30),getdate(),120)
-						select @tips=@tips +char(10)+dbo.getLastError('成本计算发生错误.')
-						print @tips
-						/*if error_number()=8134 or @matcode like '2.%'
-							BEGIN
-								print @tips
-							END
-						else
-						BEGIN
-								raiserror(@tips,16,1)
-								return
-							END*/
-					END CATCH
-			
-					--若输出了数据,则连接到XML结果串
-					if @XMLData<>'' Select @XMLResult=@XMLResult+@XMLData
-					fetch next FROM cur into @matcode,@rowid,@digit,@totalmoney,@ratemoney,@mode,@type
-				END
-			close cur
-			deallocate cur
-	END
-	else
-	BEGIN
-			begin try
-				exec sp_BatchComputeSdorgMatLedger @Doccode,@FormID,@DocDate ,@CompanyID,@SDOrgID,@PeriodID,@mode,@type ,@OptionID ,@XMLData output
-				if @XMLData<>'' Select @XMLResult=@XMLResult+@XMLData
-			end try
-			begin catch
+	--下面用游标循环重算成本
+	declare cur CURSOR READ_ONLY fast_forward forward_only for
+	select a.matcode,a.Rowid,a.digit,a.totalmoney,a.ratemoney,a.Mode,a.ComputeType
+	From #table a  inner join iMatGeneral img with(nolock) on a.MatCode=img.MatCode
+		inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
+	where  (@InputMatcode='' or exists(select 1 from commondb.dbo.SPLIT(isnull(@InputMatcode,''),',') s where img.MatCode=s.List))
+		and (@InputMatgroup='' or  exists(select 1 from commondb.dbo.SPLIT(isnull(@InputMatgroup,''),',') s where img2.PATH like '%/'+s.List+'/%'))
+		and isnull(a.digit,0)<>0										--数量为0的商品忽略
+		and isnull(img.MatState,0)=1								--非库存商品过滤
+	order by a.ID
+	open cur
+	fetch next FROM cur into @matcode,@rowid,@digit,@totalmoney,@ratemoney,@mode,@type
+	while @@FETCH_STATUS=0
+		BEGIN
+			BEGIN TRY
+				
+				--print '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ @Doccode+','+@matcode+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+'>>>>'+convert(varchar(30),getdate(),120)
+				exec sp_ComputeSdorgMatLedger @Doccode,@FormID,@rowid,@matcode,@Companyid,@sdorgid,@PeriodID,@digit,@totalmoney,@ratemoney,@mode,@type,@XMLData output
+			END TRY
+			BEGIN CATCH
+				 --select * from #table
+				 --select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
 				select @tips= '发生异常:'+isnull(@Companyid,'') +','+isnull(@PeriodID,'') +','+isnull(@SDOrgID,'') +','+convert(varchar(10),@FormID)+','+ @Doccode+','+@matcode+','+convert(varchar(10),isnull(@Digit,0))+','+convert(varchar(10),isnull(@totalmoney,0))+','+convert(varchar(10),isnull(@ratemoney,0))+','+convert(varchar(50),@mode)+'>>>>'+convert(varchar(30),getdate(),120)
-				select @tips=@tips +char(10)+dbo.getLastError('批量成本计算发生错误.')
+				select @tips=@tips +char(10)+dbo.getLastError('成本计算发生错误.')
 				print @tips
-			end catch
+				/*if error_number()=8134 or @matcode like '2.%'
+					BEGIN
+						print @tips
+					END
+				else
+				BEGIN
+						raiserror(@tips,16,1)
+						return
+					END*/
+			END CATCH
+			
 			--若输出了数据,则连接到XML结果串
 			if @XMLData<>'' Select @XMLResult=@XMLResult+@XMLData
+			fetch next FROM cur into @matcode,@rowid,@digit,@totalmoney,@ratemoney,@mode,@type
 		END
-	
+	close cur
+	deallocate cur
+	--select @Doccode, * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
 	--循环完毕,补上XML结束串
 	select @XMLResult=@XMLResult+'</root>'
-	--print @XMLResult
 	--将XML还原成临时表,供数据输出
-	/*exec sp_xml_preparedocument @hDocument output,@XMLResult
+	exec sp_xml_preparedocument @hDocument output,@XMLResult
 	Insert Into #XMLDataTable
 	Select * From OpenXML(@hDocument,'/root/row',1) with #XMLDataTable
 	exec sp_XML_RemoveDocument @hDocument
-	*/
-	--print @XMLResult
-	--select * From #XMLDataTable
+	print @XMLResult
+	--select * From #XMLDataTablesss
 	 
 	/*insert into #ResultTable(Doccode,Formid,refformid,refcode,plantid,sdorgid,periodid,matcode,rowid,
 	oldstock,oldstockvalue,oldratevalue,
@@ -530,7 +483,7 @@ BEGIN
 	Stock,StockValue,RateValue,Mode,ComputeType,@OptionID 
 	From #XMLDataTable*/
 	--执行输出
-	/*begin try
+	begin try
 		
 		exec sp_outputMatLedgerResult @Doccode,@FormID,@DocDate,@Companyid,@SDOrgID ,@PeriodID,@OptionID,@Usercode,@TerminalID
 		--select * from iMatsdorgLedger iml where iml.sdorgid=@SDOrgID and iml.MatCode=@matcode
@@ -541,6 +494,6 @@ BEGIN
 		select @tips=@tips+char(10)+dbo.getLastError('输出成本数据错误.')
 		raiserror(@tips,16,1)
 		return
-	END catch*/
+	END catch
 	return
 END

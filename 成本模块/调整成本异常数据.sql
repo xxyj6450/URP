@@ -2,19 +2,40 @@ return
 --初始化数据
 begin tran
 --初始化捷通部门期初成本
-delete iMatsdorgLedger where MatCode in('S6.04.14.01.01.1')
+delete iMatsdorgLedger --where MatCode in('1.11.025.1.1.1')
 	INSERT INTO iMatsdorgLedger(plantid,sdorgid,matcode,stock,stockvalue,ratevalue)
 	SELECT t.plantid,e.sdorgid,t.matcode,SUM(t.digit) digit,SUM(t.digit)*isnull(price,0) AS stockvalue,
 	(case when t.plantid not in ('101','115') then (SUM(t.digit)*isnull(price,0))*(100+isnull(l.addpresent,0))/100 else SUM(t.digit)*price END) AS ratevalue 
 	FROM ckdigit t LEFT JOIN vstorage e ON t.stcode=e.stcode LEFT JOIN imatgeneral l ON t.matcode=l.matcode
 	--where t.plantid<>'115' and left(t.matcode,2) in ('1.','S1','Y1') 
-	where  l.MatCode in('S6.04.14.01.01.1')
+	--where  l.MatCode in('1.11.025.1.1.1')
 	GROUP BY t.plantid,e.sdorgid,t.matcode,price,addpresent
 
 	commit
 	rollback
+ --2月初始化
+ begin tran
+delete imatsdorgledger where MatCode='6.99.12.01.23.1'
+insert into imatsdorgledger(plantid,sdorgid,matcode,stock,stockvalue,ratevalue)
+select plantid,sdorgid,matcode,stock,stockvalue,ratevalue from imatsdorgbalance where periodid='2013-01'
+and matcode='6.99.12.01.23.1'
+begin tran
+ update I
+ set i.sdorgid=os.sdorgid
+ --select i.*
+ from istockledgerlog i with(nolock) inner join oStorage os with(nolock)
+on i.stcode=os.stCode
+ where i.sdorgid<>os.sdorgid
+ and i.docdate>='2013-01-01'
  
-
+ commit
+ update a
+ set netmoney = totalmoney
+ --select a.*
+ from imatdoc_d a with(nolock) inner join imatdoc_h b on a.doccode=b.DocCode
+ where b.FormID=1520
+ and b.DocDate>='2013-03-01'
+ and isnull(a.netmoney,0)<>isnull(a.totalmoney,0)
 
 --更新内部退货单拒收时写错公司与部门数据
 begin tran
@@ -28,7 +49,7 @@ update a
  inner join osdorg os1 with(nolock) on c.sdorgid=os1.SDOrgID
 where a.FormID=4031
 and isnull(a.sdorgid,'')<>b.sdorgid
-and a.DocDate>='2013-01-01'
+and a.DocDate>='2013-03-01'
 commit
  select * from iMatsdorgLedger iml where iml.sdorgid='101.05.02' and iml.MatCode='1.11.020.1.1.1'
  

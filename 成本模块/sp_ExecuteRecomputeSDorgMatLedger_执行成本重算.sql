@@ -1,16 +1,13 @@
 /*
 示例:
 begin tran
-exec sp_ExecuteRecomputeSDorgMatLedger '2013-02-01','2013-02-28','','','','1.09.015.1.2.3.3','','',''
+exec sp_ExecuteRecomputeSDorgMatLedger '2013-01-01','2013-01-31','','','','6.99.12.01.23.1','','',''
  
 rollback
 commit
  
 */
-
-
- 
-alter proc sp_ExecuteRecomputeSDorgMatLedger
+ alter proc sp_ExecuteRecomputeSDorgMatLedger
 	@BeginDate DATETIME='',									--重算起始时间
 	@EndDate datetime='',										--重算结束时间
 	@CompanyID varchar(200)='',								--重算公司,可用逗号分隔多个公司
@@ -31,12 +28,14 @@ as
 	 Create Table #ResultTable (
 	 	FormID int,
 	 	Doccode varchar(20),
+	 	DocDate datetime,
 	 	Refformid int,
 	 	RefCode varchar(30),
 	 	plantID varchar(20),
 	 	SDOrgID varchar(50),
 	 	Periodid varchar(7),
  		Matcode varchar(50),						--商品编码
+ 		Seriescode varchar(50),
 		RowID varchar(50),							--x
  		OldStock int,									--原库存
  		OldStockValue money,					--原库存金额
@@ -132,78 +131,147 @@ as
 			END
 		close cur_Doc
 		deallocate cur_doc
-		--select * from #ResultTable
-		----------------------------------------------------------------回填数据------------------------------------------------------------------------------
-		/*
-		--回填原单                  
-		--采购入库单 1509 盘盈单 1520 盘盈入库单 1599 采购退货单 1504 领料出库单 1523 盘亏单 1501 内部采购退货单 4062 盘亏出库单 1598                  
-		IF @formid IN (1509,1520,1599)                  
-		BEGIN                  
-		 UPDATE imatdoc_d SET  netmoney=isnull(a.StockValue,0)-isnull(a.OldStockValue,0), matcost=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),    
-		  rateprice=(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney =isnull( a.RateValue,0)-isnull(a.OldRateValue,0)                 
-		 FROM imatdoc_d d with(nolock) inner join #ResultTable  a on d.rowid=a.docrowid AND d.MatCode=a.Matcode AND d.DocCode=a.doccode                  
-		END                      
-		IF @formid IN (1504,1523,1501,4062,1598)      --            
-		BEGIN                  
-		 UPDATE imatdoc_d SET netprice =(isnull(a.OldStockValue,0)-isnull(a.StockValue,0))/isnull(a.Digit,0),netmoney =isnull(a.OldStockValue,0)-isnull(a.StockValue,0),                
-			 matcost=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),rateprice = (isnull(a.OldRateValue,0)-isnull(a.RateValue,0))/isnull(a.Digit,0),ratemoney = isnull(a.OldRateValue,0)-isnull(a.RateValue,0)                   
-		 FROM imatdoc_d d with(nolock) inner join #XMLDataTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=a.doccode          
-		 --UPDATE imatdoc_h SET PeriodID = @periodid,DocDate =@DocDate WHERE DocCode=@doccode AND FormID=4062               
-		END                  
-		IF @formid IN (1507,4061) --调拨入库单,内部采购入库单                  
-		BEGIN                  
-		 UPDATE imatdoc_d SET matcost= isnull(a.StockValue,0)-isnull(a.OldStockValue,0),price=(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),totalmoney=isnull( a.StockValue,0)-isnull(a.OldStockValue,0),                  
-		 netprice=(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),netmoney=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),          
-		 rateprice=(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney=isnull(a.RateValue,0)-isnull(a.OldRateValue,0)                  
-		 FROM imatdoc_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=a.doccode                  
-		END                  
-                  
-		--代销入库 4630 代销退货 4631                  
-		IF @formid IN (4630)                  
-		BEGIN                  
-		 UPDATE Commsales_d SET netmoney=isnull(a.StockValue,0)-isnull(a.OldStockValue,0), matcost=isnull(a.StockValue,0)-isnull(a.OldStockValue,0),rateprice = (isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),          
-		 ratemoney = isnull(a.RateValue,0)-isnull(a.OldRateValue,0)                  
-		 FROM Commsales_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode                  
-		END                  
-                  
-		IF @formid IN (4631)                  
-		BEGIN                  
-		 UPDATE Commsales_d SET netmoney=isnull(a.OldStockValue,0)-isnull(a.StockValue,0), matcost=isnull(a.OldStockValue,0)-isnull(a.StockValue,0),rateprice = (isnull(a.OldRateValue,0)-isnull(a.RateValue,0))/isnull(a.Digit,0),          
-		 ratemoney = isnull(a.OldRateValue,0)-isnull(a.RateValue,0)          
-		 FROM Commsales_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode                  
-		END                 
-                  
-		-- 返厂返回单 1557 串号调整单 1553                   
-		IF @formid IN (1557,1553)                  
-		BEGIN            
-		 IF @OptionID='1'          
-		 BEGIN          
-		  UPDATE iserieslogitem SET netprice = abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0), netmoney=abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),                
-		   rateprice = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))          
-		  FROM iserieslogitem d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode1=a.Matcode AND d.DocCode=@doccode          
-		 END          
-            
-		 IF @OptionID='2'          
-		 BEGIN          
-		  UPDATE iserieslogitem SET netprice1 =abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),netmoney1=abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),           
-		   rateprice1 = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney1 = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))                  
-		  FROM iserieslogitem d with(nolock) inner join #XMLDataTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode          
-		 END           
-		END                  
-                  
-		--批发销售出库 2401 批发销售退货 2418 零售出库单 2419 零售退货单 2420 促销出库单 2450 送货单 4950 退货单 4951                   
-		--内部销售出库单 4031 内部销售退货单 4032 调拨出库单 2424                  
-		IF @formid IN (2401,2418,2419,2420,2450,4950,4951,4031,4032,2424)                  
-		BEGIN                  
-		 UPDATE spickorderitem SET netprice = abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),netmoney =abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),                   
-			MatCostPrice = abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.Digit,0),MatCost =abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0)),                
-			rateprice = abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0),ratemoney =abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))                  
-		 FROM spickorderitem d with(nolock) inner join #XMLDataTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=@doccode              
-           
-		  --UPDATE sPickorderHD SET periodid = @periodid,DocDate =@DocDate WHERE DocCode=@doccode AND FormID IN (2424,4031)                 
-		END                  
- */
+		--回填单据与明细账
+		UPDATE d 
+		SET  netmoney=case when a.FormID in(1509,1520,1599)  then isnull(a.StockValue,0)-isnull(a.OldStockValue,0)
+										when a.formid IN (1504,1523,1501,4062,1598) then isnull(a.OldStockValue,0)-isnull(a.StockValue,0)
+										when a.formid IN (1507,4061) then  isnull(a.StockValue,0) -isnull(a.OldStockValue,0)
+								end, 
+		netprice=case when a.FormID in(1509,1520,1599)  then (isnull(a.StockValue,0)-isnull(a.OldStockValue,0))/isnull(a.digit,0)
+								when a.formid IN (1504,1523,1501,4062,1598) then (isnull(a.OldStockValue,0)-isnull(a.StockValue,0))/isnull(a.Digit,0)
+								when a.formid IN (1507,4061) then (isnull(a.StockValue,0) -isnull(a.OldStockValue,0)) / isnull(a.Digit,0)
+						end, 
+		matcost=case when a.FormID in(1509,1520,1599)  then isnull(a.StockValue,0)-isnull(a.OldStockValue,0)
+							when a.formid IN (1504,1523,1501,4062,1598) then isnull(a.OldStockValue,0)-isnull(a.StockValue,0)
+							when a.formid IN (1507,4061) then  isnull(a.StockValue,0) -isnull(a.OldStockValue,0)
+					end,    
+		rateprice=case when a.FormID in(1509,1520,1599)  then (isnull(a.RateValue,0)-isnull(a.OldRateValue,0))/isnull(a.Digit,0)
+							when a.formid IN (1504,1523,1501,4062,1598) then (isnull(a.OldRateValue,0)-isnull(a.RateValue,0))/isnull(a.Digit,0)
+							when a.formid IN (1507,4061) then  (isnull(a.RateValue,0) -isnull(a.OldRateValue,0)) / isnull(a.Digit,0)
+						end ,
+		ratemoney =case when a.FormID in(1509,1520,1599)  then isnull( a.RateValue,0)-isnull(a.OldRateValue,0)
+								when a.formid IN (1504,1523,1501,4062,1598) then    isnull(a.OldRateValue,0)-isnull(a.RateValue,0) 
+								when a.formid IN (1507,4061) then  isnull(a.RateValue,0) -isnull(a.OldRateValue,0)
+			        end,
+			totalmoney     =case when a.FormID IN (1507,4061) then isnull(a.StockValue,0) -isnull(a.OldStockValue,0) 
+										else d.totalmoney 
+								end,
+		price          = case when a.formid   IN (1507,4061) then (isnull(a.StockValue,0) -isnull(a.OldStockValue,0)) / isnull(a.Digit,0)
+									else d.price
+							end
+		FROM imatdoc_d d with(nolock) inner join #ResultTable a on d.rowid=a.RowID AND d.MatCode=a.Matcode AND d.DocCode=a.doccode
+		where a.FormID in(1509,1520,1599,1504,1523,1501,4062,1598,1507,4061)     
+              
+	--代销入库 4630 代销退货 4631                                   
+	UPDATE d
+	SET    netmoney      =case when a.FormID in(4630) then isnull(a.StockValue,0) -isnull(a.OldStockValue,0)
+											when a.FormID in(4631) then isnull(a.OldStockValue,0) -isnull(a.StockValue,0)
+									end,
+		    matcost       =case when a.FormID in(4630) then  isnull(a.StockValue,0) -isnull(a.OldStockValue,0)
+										when a.FormID in(4631) then isnull(a.OldStockValue,0) -isnull(a.StockValue,0)
+								end,
+		    rateprice     =case when a.FormID in(4630) then  (isnull(a.RateValue,0) -isnull(a.OldRateValue,0)) / isnull(a.Digit,0)
+									when a.FormID in(4631) then  (isnull(a.OldRateValue,0) -isnull(a.RateValue,0)) / isnull(a.Digit,0)
+								end,
+		    ratemoney     =case when a.FormID in(4630) then  isnull(a.RateValue,0) -isnull(a.OldRateValue,0)
+										when a.FormID in(4631) then isnull(a.OldRateValue,0) -isnull(a.RateValue,0)
+								end
+	FROM   Commsales_d d with(nolock)
+		    inner JOIN #ResultTable a
+		        ON  d.rowid = a.RowID
+		        AND d.MatCode = a.Matcode
+		        AND d.DocCode = a.doccode
+	WHERE  a.FormID IN (4630,4631)                
+		
+	-- 返厂返回单 1557 串号调整单 1553                   
+	UPDATE d
+	SET    netprice1      =case when a.OptionID=2 then  abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0)) / isnull(a.Digit,0)
+											else d.netprice1
+								end,
+		    netmoney1      = case when a.OptionID=2 then   abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0))
+											else d.netmoney1
+									end,
+		    rateprice1     = case when a.OptionID=2 then   abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0)) / isnull(a.Digit,0)
+										else d.rateprice1
+									end,
+		    ratemoney1     =case when a.OptionID=2 then   abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0))	
+										else d.ratemoney1
+									end,
+			netprice =case when a.OptionID=1 then    abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0)) / isnull(a.Digit,0)
+									else d.netprice
+							end,
+				netmoney = case when a.OptionID=1 then    abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0))
+									else d.netmoney
+							end,
+				rateprice =case when a.OptionID=1 then     abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0)) / isnull(a.Digit,0)
+									else d.rateprice
+								end,
+				ratemoney =case when a.OptionID=1 then    abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0))
+									else d.ratemoney
+								end
+	FROM   iserieslogitem d with(nolock)
+		    inner JOIN #ResultTable a
+		        ON  d.rowid = a.RowID
+		        AND d.MatCode = a.Matcode
+		        AND d.DocCode = a.doccode
+	WHERE  a.FormID IN (1557, 1553)
+ 
+                
+	--批发销售出库 2401 批发销售退货 2418 零售出库单 2419 零售退货单 2420 促销出库单 2450 送货单 4950 退货单 4951                   
+	--内部销售出库单 4031 内部销售退货单 4032 调拨出库单 2424                  
+                 
+	UPDATE d
+	SET    netprice = abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0)) / isnull(a.Digit,0),
+		    netmoney = abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0)),
+		    MatCostPrice = abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0)) / isnull(a.Digit,0),
+		    MatCost = abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0)),
+		    rateprice = abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0)) / isnull(a.Digit,0),
+		    ratemoney = abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0))
+	FROM   spickorderitem d with(nolock)
+		    inner JOIN #ResultTable a
+		        ON  d.rowid = a.RowID
+		        AND d.MatCode = a.Matcode
+		        AND d.DocCode = a.doccode
+	WHERE  a.FormID IN (2401, 2418, 2419, 2420, 2450, 4950, 4951, 4031, 4032, 2424) 
+	--UPDATE sPickorderHD SET periodid = @periodid,DocDate =@DocDate WHERE DocCode=@doccode AND FormID IN (2424,4031)
+		
+	---写库存明细账 
+	update d
+		set   inledgeramount     =case when a.FormID  IN (1509, 1520, 1599, 1507, 4061, 4630)  then isnull(a.StockValue,0) -isnull(a.OldStockValue,0)
+													when a.FormID IN (1504, 4062) then -1 * (isnull(a.OldStockValue,0) -isnull(a.StockValue,0))
+													when a.FormID in(1557,1553) and a.optionid='1'  and  isnull(d.indigit,0) < 0 then   -1*abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))
+													when a.FormID in(1557,1553) and a.optionid='2'  and isnull(d.indigit,0)>0 then  abs(isnull(a.StockValue,0)-isnull(a.OldStockValue,0))
+											end,
+		    inrateamount       = case when a.FormID  IN (1509, 1520, 1599, 1507, 4061, 4630)  then isnull(a.RateValue,0) -isnull(a.OldRateValue,0)
+												when a.FormID IN (1504, 4062) then -1 * (isnull(a.OldRateValue,0) -isnull(a.RateValue,0))
+												when a.FormID in(1557,1553) and a.optionid='1'  and  isnull(d.indigit,0) < 0 then   -1*abs(isnull(a.RateValue,0) -isnull(a.OldRateValue,0))
+												when a.FormID in(1557,1553) and a.optionid='2'  and isnull(d.indigit,0)>0 then abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))
+										end,
+			outledgeramount     = case when a.FormID in(4631) then abs(isnull(a.OldStockValue,0) -isnull(a.StockValue,0))
+													when  a.FormID IN (1523, 1501, 1598, 2401, 2419, 2450, 4950, 4031, 2424)  then isnull(a.OldStockValue,0) -isnull(a.StockValue,0)
+													when a.FormID IN (2418, 2420, 4951, 4032) then  -1 * (isnull(a.StockValue,0) -isnull(a.OldStockValue,0))
+											end,
+		    outrateamount       =  case when a.FormID in(4631) then  abs(isnull(a.OldRateValue,0) -isnull(a.RateValue,0))
+													when a.FormID IN (1523, 1501, 1598, 2401, 2419, 2450, 4950, 4031, 2424) then isnull(a.OldRateValue,0) -isnull(a.RateValue,0)
+													when a.FormID IN (2418, 2420, 4951, 4032) then  -1 * (isnull(a.RateValue,0) -isnull(a.OldRateValue,0))
+											end,
+		    matcost            = case when a.FormID  IN (1509, 1520, 1599, 1507, 4061, 4630)  then isnull(a.StockValue,0) -isnull(a.OldRateValue,0)
+												when a.FormID IN (1504, 4062) then 1 * (isnull(a.OldStockValue,0) -isnull(a.StockValue,0))
+												when a.FormID in(4631) then abs(isnull(a.OldStockValue,0) -isnull(a.StockValue,0))
+												when a.FormID IN (1523, 1501, 1598, 2401, 2419, 2450, 4950, 4031, 2424) then  isnull(a.OldStockValue,0) -isnull(a.StockValue,0)
+												when a.FormID IN (2418, 2420, 4951, 4032) then  -1 * (isnull(a.StockValue,0) -isnull(a.OldStockValue,0))
+												when a.FormID in(1557,1553) and a.optionid='1' and  isnull(d.indigit,0) < 0 then  -1 * abs(isnull(a.StockValue,0) -isnull(a.OldStockValue,0))
+												when a.FormID in(1557,1553) and a.optionid='2' and isnull(d.indigit,0)>0 then abs(isnull(a.RateValue,0)-isnull(a.OldRateValue,0))
+									end,
+			periodid = a.Periodid,
+		    docdate = a.docdate
+	from istockledgerlog d with(nolock)  inner JOIN #ResultTable a
+		        ON  d.docrowid = a.RowID
+		        AND d.MatCode = a.Matcode
+		        AND d.DocCode = a.doccode
+        
 	END
+	
 	
  
 	
