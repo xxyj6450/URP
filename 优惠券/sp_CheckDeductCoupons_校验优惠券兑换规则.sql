@@ -5,84 +5,27 @@
 返回值：
 编写：三断笛
 备注：
-#DocData可按具体业务传入具体值，一般性声名如下：
-		CREATE TABLE #DocData(
-					Doccode VARCHAR(20),
-					DocDate DATETIME,
-					FormID INT,
-					Doctype VARCHAR(50),
-					RefFormID INT,
-					Refcode VARCHAR(20),
-					packageID VARCHAR(20),
-					ComboCode VARCHAR(50),
-					SdorgID VARCHAR(50),
-					dptType VARCHAR(50),
-					SdorgPath VARCHAR(500),
-					AreaID VARCHAR(50),
-					AreaPath VARCHAR(500),
-					stcode VARCHAR(50),
-					companyID VARCHAR(50),
-					cltCode VARCHAR(50),
-					CouponsBarcode VARCHAR(50),
-					[STATE]  VARCHAR(20),
-					CouponsCode VARCHAR(50),
-					CouponsName VARCHAR(200),
-					CouponsgroupCode VARCHAR(50),
-					CodeMode VARCHAR(50),
-					CodeLength INT,
-					SourceMode VARCHAR(20),
-					PresentMode VARCHAR(50),
-					PresentCount VARCHAR(500),
-					PresentMoney VARCHAR(500),
-					ExchangeMode VARCHAR(50),
-					ExchangeCount VARCHAR(500),
-					ExchangeMoney VARCHAR(500),
-					ForceCheckStock BIT,
-					BeginDate DATETIME,								--优惠券资料表中的起始有效期
-					EndDate DATETIME,									--优惠券资料表中的终止有效期
-					Valid BIT,
-					Price VARCHAR(500),
-					RowID varchar(50),
-					Seriescode varchar(50),
-					RefRowID varchar(50),
-					Matcode VARCHAR(50),
-					MatName varchar(200),
-					Matgroup VARCHAR(50),
-					MatType VARCHAR(50),
-					MatgroupPath VARCHAR(500),
-					salePrice MONEY,
-					totalMoney MONEY,
-					--兑换商品数量.每个商品编码有若干数量.
-					--因为商品允许设置使用多张,多种优惠券
-					--所以在优惠券兑换单中,商品的实物总数,以此数量为准
-					--这就要求在源单据中,同样的商品只能有一行
-					--并且优惠券兑换单中的商品及数量必须和原单据对应
-					--在每次生成优惠券兑换单时,都先删除原兑换单中的明细,再重新插入.
-					--并且在确认源单据时,需要核对与优惠券兑换单中的商品数量是否一致.
-					digit INT,													
-					deductAmount MONEY,
-					PackageType varchar(50),
-					beginValidDate DATETIME,							--优惠券表中的起始有效期
-					endValidDate DATETIME,							--优惠券表中的终止有效期
-					canOverlay BIT,											--多种优惠券是否允许叠加
-					CouponsOwner VARCHAR(50),					--优惠券资料设置中的持有者
-					[OWNER] VARCHAR(50),								--实际优惠券的持有者
-					AuthKey	 VARCHAR(50),								--优惠券兑换单中用户输入的校验密码
-					CouponsAuthKey	VARCHAR(50)					--优惠券表中的校验密码
-		)
-示例：
+#DocData可按具体业务传入具体值，一般性声名如下
 */
 alter proc sp_CheckDeductCoupons
 	@FormID int,
 	@Doccode varchar(50),
-	@RefFormID int,
+	@RefFormID int=0,
+	@Refcode varchar(20)='',
+	@Stcode varchar(50)='',
+	@CustomerCode varchar(50)='',
+	@PackageID varchar(50)='',
+	@ComboCode int=0,
 	@OptionID varchar(200)='',
 	@Usercode varchar(50)=''
 as
 	BEGIN
 		set NOCOUNT on;
 		declare @tips varchar(max)
-		CREATE TABLE #DocData(
+		--若未传入数据源，则自己组织
+		if object_id('tempdb.dbo.#Docdata') is NULL
+			BEGIN
+				CREATE TABLE #DocData(
 					Doccode VARCHAR(20),
 					DocDate DATETIME,
 					FormID INT,
@@ -110,14 +53,16 @@ as
 					PresentMode VARCHAR(50),
 					PresentCount VARCHAR(500),
 					PresentMoney VARCHAR(500),
+					PresentFormGroup varchar(500),
 					ExchangeMode VARCHAR(50),
 					ExchangeCount VARCHAR(500),
 					ExchangeMoney VARCHAR(500),
+					ExchangeFormGroup varchar(500),
 					ForceCheckStock BIT,
 					BeginDate DATETIME,								--优惠券资料表中的起始有效期
 					EndDate DATETIME,									--优惠券资料表中的终止有效期
 					Valid BIT,
-					Price VARCHAR(500),
+					CouponsPrice VARCHAR(500),
 					RowID varchar(50),
 					Seriescode varchar(50),
 					RefRowID varchar(50),
@@ -126,8 +71,8 @@ as
 					Matgroup VARCHAR(50),
 					MatType VARCHAR(50),
 					MatgroupPath VARCHAR(500),
-					salePrice MONEY,
-					totalMoney MONEY,
+					Price MONEY,
+					totalmoney MONEY,
 					--兑换商品数量.每个商品编码有若干数量.
 					--因为商品允许设置使用多张,多种优惠券
 					--所以在优惠券兑换单中,商品的实物总数,以此数量为准
@@ -145,20 +90,159 @@ as
 					[OWNER] VARCHAR(50),								--实际优惠券的持有者
 					AuthKey	 VARCHAR(50),								--优惠券兑换单中用户输入的校验密码
 					CouponsAuthKey	VARCHAR(50)					--优惠券表中的校验密码
-		)
+				)
+				--将待处理数据放至临时表
+				IF @Formid IN(2419)
+					begin
+						INSERT INTO #DocData
+							(  Doccode,   DocDate,   FormID,   Doctype,   
+								RefFormID,   Refcode,   packageID,   ComboCode,   
+								SdorgID,   dptType,   SdorgPath,   
+								AreaID,   AreaPath,   stcode,   companyID,   
+								cltCode,   CouponsBarcode,   STATE,   CouponsCode,   
+								CouponsName,   CouponsgroupCode,   CodeMode,   
+								CodeLength,   SourceMode,   PresentMode,   
+								PresentCount,   PresentMoney,  PresentFormGroup, ExchangeMode,   
+								ExchangeCount,   ExchangeMoney,ExchangeFormGroup,   ForceCheckStock,   
+								BeginDate,   EndDate,   Valid,   CouponsPrice,   Matcode, matname,  
+								Matgroup,   MatType,   MatgroupPath,   Price,   
+								totalMoney,   digit,   deductAmount,CouponsOwner,canOverlay,RowID,RefRowID,
+								Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey )
+
+						select @Doccode,getdate(),@FormID,NULL as DocType,NULL,NULL,@PackageID as packageid,@combocode AS combocode,
+						o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,@Customercode,
+						s.CouponsBarCode,NULL [State],ig.CouponsCode,ig.CouponsName, ig.GroupCode,ig.CodeMode,ig.CodeLength,
+						ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,ig.PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
+						ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.price,	s.MatCode,s.MatName,ig2.MatGroup,ig2.mattype,ig3.[PATH],
+						s.price,s.totalmoney,s.Digit,s.DeductAmout,ig.CouponsOwner,ig.canOverlay,s.RowID,newid() RefRowID,s.SeriesCode,i.beginValidDate,i.ValidDate,
+						i.CouponsOWNER,i.authKey
+						FROM  sPickorderitem s with(nolock) INNER JOIN oStorage o  with(nolock) ON o.stCode=@Stcode
+						INNER JOIN oSDOrg o2  with(nolock) ON o.sdorgid=o2.SDOrgID
+						INNER JOIN gArea g  with(nolock) ON o2.AreaID=g.areaid
+						left JOIN iCoupons i  with(nolock) ON s.CouponsBarCode=i.CouponsBarcode						--优惠券不一定存在,此处要用Left Join 
+						left JOIN iCouponsGeneral ig  with(nolock) ON i.CouponsCode=ig.CouponsCode
+						left JOIN iMatGeneral ig2  with(nolock) ON s.MatCode=ig2.MatCode
+						left JOIN iMatGroup ig3  with(nolock) ON ig2.MatGroup=ig3.matgroup
+						WHERE s.Doccode=@doccode
+					end
+				if @FormID in(9207)
+					BEGIN
+						--将待处理数据放至临时表
+								INSERT INTO #DocData
+									(  Doccode,   DocDate,   FormID,   Doctype,   
+										RefFormID,   Refcode,   packageID,   ComboCode,   
+										SdorgID,   dptType,   SdorgPath,   
+										AreaID,   AreaPath,   stcode,   companyID,   
+										cltCode,   CouponsBarcode,   STATE,   CouponsCode,   
+										CouponsName,   CouponsgroupCode,   CodeMode,   
+										CodeLength,   SourceMode,   PresentMode,   
+										PresentCount,   PresentMoney, PresentFormGroup,  ExchangeMode,   
+										ExchangeCount,   ExchangeMoney, ExchangeFormGroup,  ForceCheckStock,   
+										BeginDate,   EndDate,   Valid,   CouponsPrice,   Matcode, matname,
+										Matgroup,   MatType,   MatgroupPath,   Price,   
+										totalMoney,   digit,   deductAmount ,RowID,RefRowID,Seriescode,OWNER,CouponsAuthKey )
+								select ch.Doccode,ch.docdate,ch.FormID,NULL DocType,@refFormID,@Refcode DocCode,@PackageID,@ComboCode AS combocode,
+								o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,ch.cltCode,
+								cd.CouponsBarCode,i.[State],ig.CouponsCode,cd.CouponsName,ig.GroupCode,ig.CodeMode,ig.CodeLength,
+								ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,ig.PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
+								ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.price,cd.MatCode,cd.matname,ig2.MatGroup,ig2.mattype,ig3.[PATH],
+								cd.Amount,cd.Amount,cd.DeductAmout,cd.DeductAmout,cd.RowID,cd.RefRowID,cd.SeriesCode,i.CouponsOWNER,i.authkey 
+								FROM Coupons_H ch  with(nolock) INNER JOIN oStorage o  with(nolock) ON ch.Stcode=o.stCode
+								INNER JOIN oSDOrg o2  with(nolock) ON o.sdorgid=o2.SDOrgID
+								INNER JOIN gArea g  with(nolock) ON o2.AreaID=g.areaid
+								INNER JOIN Coupons_D cd  with(nolock) ON ch.Doccode=cd.Doccode
+								INNER JOIN iCouponsGeneral ig  with(nolock) ON cd.CouponsCode=ig.CouponsCode
+								left JOIN iCoupons i  with(nolock) ON cd.CouponsBarCode=i.CouponsBarcode						--优惠券不一定存在,此处要用Left Join 
+								LEFT JOIN iMatGeneral ig2  with(nolock) ON cd.MatCode=ig2.MatCode
+								LEFT JOIN iMatGroup ig3  with(nolock) ON ig2.MatGroup=ig3.matgroup
+								WHERE ch.Doccode=@doccode
+					END
+				
+				if @FormID in(9146,9102)
+					BEGIN
+						--将数据准备至临时表
+						if object_id('tempdb.dbo.#Unicom_OrderDetails') is null select * Into #Unicom_OrderDetails From Unicom_OrderDetails with(nolock) where DocCode=@Doccode
+						;with   cte_unicom_orderdetails(doccode,seriescode,matcode,MatName,rowid,digit,price,totalmoney,couponsbarcode,DeductAmout) as(
+							select doccode,seriescode,matcode,matname,rowid,digit,price,totalmoney,couponsbarcode,uod.DeductAmout
+							from #Unicom_OrderDetails uod with(nolock)
+							where uod.DocCode=@Doccode
+							and isnull(uod.couponsbarcode,'')<>''
+							union all
+							select @Doccode,uo.SeriesCode,uo.matcode,uo.MatName,newid(),1,uo.MatPrice,uo.MatMoney,uo.matCouponsbarcode,uo.matDeductAmount
+							from Unicom_Orders uo with(nolock) where uo.DocCode=@Doccode
+							and isnull(uo.matCouponsbarcode,'')<>''
+						)
+						INSERT INTO #DocData
+							(  Doccode,   DocDate,   FormID,   Doctype,   
+								RefFormID,   Refcode,   packageID,   ComboCode,   
+								SdorgID,   dptType,   SdorgPath,   
+								AreaID,   AreaPath,   stcode,   companyID,   
+								cltCode,   CouponsBarcode,   STATE,   CouponsCode,   
+								CouponsName,   CouponsgroupCode,   CodeMode,   
+								CodeLength,   SourceMode,   PresentMode,   
+								PresentCount,   PresentMoney, PresentFormGroup,  ExchangeMode,   
+								ExchangeCount,   ExchangeMoney,ExchangeFormGroup,   ForceCheckStock,   
+								BeginDate,   EndDate,   Valid,   CouponsPrice,   Matcode, matname,  
+								Matgroup,   MatType,   MatgroupPath,   Price,   
+								totalMoney,   digit,   deductAmount,CouponsOwner,canOverlay,RowID,RefRowID,Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey  )
+
+						select @Doccode,getdate(),@FormID,NULL as DocType,NULL,NULL,@PackageID,@Combocode AS combocode,
+						o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,@Customercode,
+						s.CouponsBarCode,i.state [State],ig.CouponsCode,ig.CouponsName, ig.GroupCode,ig.CodeMode,ig.CodeLength,
+						ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
+						ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.price,	s.MatCode,s.MatName,ig2.MatGroup,ig2.mattype,ig3.[PATH],
+						s.price,s.totalmoney,s.Digit,s.DeductAmout,ig.CouponsOwner,ig.canOverlay,s.RowID,newid() RefRowID,s.SeriesCode,i.beginValidDate,i.ValidDate,i.CouponsOWNER,i.authKey
+						FROM cte_unicom_orderdetails  s  with(nolock) INNER JOIN oStorage o  with(nolock) ON o.stCode=@Stcode
+						INNER JOIN oSDOrg o2  with(nolock) ON o.sdorgid=o2.SDOrgID
+						INNER JOIN gArea g  with(nolock) ON o2.AreaID=g.areaid
+						left JOIN iCoupons i  with(nolock) ON s.CouponsBarCode=i.CouponsBarcode						--优惠券不一定存在,此处要用Left Join 
+						left JOIN iCouponsGeneral ig  with(nolock) ON i.CouponsCode=ig.CouponsCode
+						left JOIN iMatGeneral ig2  with(nolock) ON s.MatCode=ig2.MatCode
+						left JOIN iMatGroup ig3  with(nolock) ON ig2.MatGroup=ig3.matgroup
+						WHERE s.Doccode=@doccode
+					END
+ 				--对于指定的功能号,更新政策信息
+				IF @refFormid IN(9102,9146,9237) or @FormID IN(9102,9146,9237)
+					BEGIN
+						update a
+							set a.PackageType=isnull(b.DocType,'')
+						From #DocData a left join policy_h b WITH(NOLOCK) on a.packageid=b.doccode
+					END
+ 
+				--处理中文
+				update #DocData
+				set ExchangeCount= commondb.dbo.REGEXP_Replace(isnull(ExchangeCount,''), '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#'),
+				ExchangeMoney=commondb.dbo.REGEXP_Replace(isnull(ExchangeMoney,''),  '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#'),
+				Price=commondb.dbo.REGEXP_Replace(isnull(Price,''),  '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#')
+				where ISNULL(ExchangeCount,'')!='' OR ISNULL(ExchangeMoney,'')!='' OR ISNULL(Price,'')!=''
+ 
+				--根据表达式计算可兑换数量和金额.若抵扣数量和抵扣额度本身已经是数字,就不再执行更新了.否则按表达式处理.
+				IF not  EXISTS (SELECT 1 FROM #DocData a WHERE ISNUMERIC(ISNULL(a.ExchangeCount,'1'))=1 AND ISNUMERIC(ISNULL(a.ExchangeMoney,'0'))=1 )
+					BEGIN
+						--print 'Select * From fn_getFormulaFields('''+CONVERT(VARCHAR(20),@formid)+CASE WHEN ISNULL(@refFormid,'')!='' THEN ','+CONVERT(VARCHAR(20),@refFormid) ELSE '' END +''')'
+						UPDATE  a
+						SET a.ExchangeCount=convert(money,b.data1),
+						a.ExchangeMoney=CONVERT(MONEY,b.data2)
+						FROM #DocData a OUTER APPLY dbo.ExecuteTable(0,ISNULL(a.ExchangeCount,'1')+';'+ISNULL(a.ExchangeMoney,'0'),
+						'Select * From #DocData','CouponsBarcode='''+a.CouponsBarcode+'''',-1,
+						'Select * From fn_getFormulaFields('''+CONVERT(VARCHAR(20),@formid)+CASE WHEN ISNULL(@refFormid,'')!='' THEN ','+CONVERT(VARCHAR(20),@refFormid) ELSE '' END +''')',0) b
+					END
+				
+			END
+		select * from #DocData a
 		--业务数据校验
 		if object_id('tempdb.dbo.#Docdata') is NULL
 			BEGIN
-				raiserror('业务数据不存在，无法校验优惠券.',16,1)
-				return
+				print '业务数据不存在，无法校验优惠券.'
+				return -1
 			END
 		
 		--来源方式为○1，○3，○5需要赠送,检查优惠券状态
 		SELECT @tips='' 
-		SELECT @tips=@tips+'优惠券'+a.CouponsName+'['+a.CouponsBarcode+']'+'当前状态为['+ISNULL(a.state,'')+'],无法兑换。'+dbo.crlf()
+		SELECT @tips=@tips+isnull(a.CouponsName,'')+'['+a.CouponsBarcode+']'+'当前状态为['+ISNULL(a.state,'不存在')+'],无法兑换。'+char(10)
 		FROM #DocData a  with(nolock)
-		WHERE a.SourceMode IN(1,2)
-		AND a.[STATE]!='已赠'
+		WHERE isnull(a.SourceMode,1) IN(1,2)
+		AND isnull(a.[STATE],'')!='已赠'
 		IF @@ROWCOUNT>0
 			BEGIN
 				drop TABLE #DocData
@@ -166,7 +250,7 @@ as
 				return
 			END
 		--按商品兑换的优惠券,必须有源单据商品信息,防止错误兑换优惠券
-		select @tips=''
+		/*select @tips=''
 		select @tips=@tips+'商品['+matname+']在源单据中已不存在,不允许再使用优惠券['+couponsbarcode+'].'+dbo.crlf()
 		From #DocData a
 		where a.ExchangeMode='按商品'
@@ -175,31 +259,15 @@ as
 			BEGIN
 				raiserror(@tips,16,1)
 				return
-			END
-		--从优惠券表更新优惠券信息
-		UPDATE a
-			SET a.[STATE]=ic.[State],
-			[OWNER] = ic.CouponsOWNER,
-			CouponsAuthKey=ic.AuthKey,
-			beginValidDate = ic.beginValidDate,
-			endValidDate = ic.ValidDate
-		FROM #DocData a,iCoupons ic WITH(NOLOCK)
-		WHERE a.CouponsBarcode=ic.CouponsBarcode
-	--处理中文
-	update #DocData
-	set PresentCount= commondb.dbo.REGEXP_Replace(isnull(ExchangeCount,''), '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#'),
-	PresentMoney=commondb.dbo.REGEXP_Replace(isnull(ExchangeMoney,''),  '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#'),
-	Price=commondb.dbo.REGEXP_Replace(isnull(Price,''),  '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#')
-	where ISNULL(ExchangeCount,'')!='' OR ISNULL(ExchangeMoney,'')!='' OR ISNULL(Price,'')!=''
-	--由本公司或系统发行的优惠券,需要为已赠送或使用中,才允许兑换
-	SELECT @tips='以下优惠券未赠送,不允许兑换.'+dbo.crlf()
-	SELECT @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']'+dbo.crlf()
-	FROM #DocData a  with(nolock)
-	WHERE a.SourceMode IN(1,2)
-	AND isnull(a.[STATE],'') NOT IN('已赠','使用中')
-	IF @@ROWCOUNT>0
+			END*/
+	--检查优惠券是否已启用
+	select @tips=''
+	select @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']未启用，禁止使用。'+char(10)
+	from #DocData a
+	where isnull(Valid,0)=0
+	if @@ROWCOUNT>0
 		BEGIN
-			RAISERROR(@tips,16,1)
+			raiserror(@tips,16,1)
 			return
 		END
 	--有效期控制
@@ -217,6 +285,17 @@ as
 			RAISERROR(@tips,16,1)
 			RETURN
 		END
+	--判断优惠券是否可用于指定功能
+		select @tips=''
+		select @tips=@tips+a.couponsname+'['+a.couponsbarcode+']不可用于本业务.'+char(10)
+		from #DocData a where isnull(nullif(ltrim(rtrim(a.ExchangeFormGroup)),''),'9207')!='9207'												--若未设置可赠送功能号，或设置为9201则任何业务可用
+		and  a.formid not in( select list from commondb.dbo.SPLIT(isnull(a.ExchangeFormGroup,'9207'),',') )	
+		and (isnull(a.RefFormID,0)=0 or a.refformid not in( select list from commondb.dbo.SPLIT(isnull(a.ExchangeFormGroup,'9207'),',')))
+		if @@ROWCOUNT>0
+			BEGIN
+				raiserror(@tips,16,1)
+				return
+			END
 	--判断是否存在一张优惠券中同一张单中使用多次
 	SELECT @tips='以下优惠券只能使用一次.'+dbo.crlf()
 	;WITH cte AS(
@@ -249,16 +328,7 @@ as
 			RAISERROR(@tips,16,1)
 			RETURN
 		END
-	--根据表达式计算可兑换数量和金额.若抵扣数量和抵扣额度本身已经是数字,就不再执行更新了.否则按表达式处理.
-	IF not  EXISTS (SELECT 1 FROM #DocData a WHERE ISNUMERIC(ISNULL(a.ExchangeCount,'1'))=1 AND ISNUMERIC(ISNULL(a.ExchangeMoney,'0'))=1 )
-		BEGIN
-			UPDATE  a
-			SET a.ExchangeCount=convert(int,b.data1),
-			a.ExchangeMoney=CONVERT(MONEY,b.data2)
-			FROM #DocData a OUTER APPLY dbo.ExecuteTable(0,ISNULL(a.ExchangeCount,'1')+';'+ISNULL(a.ExchangeMoney,'0'),
-			'Select * From #DocData','CouponsBarcode='''+a.CouponsBarcode+'''',-1,
-			'Select * From fn_getFormulaFields('''+CONVERT(VARCHAR(20),@formid)+CASE WHEN ISNULL(@refFormid,'')!='' THEN ','+CONVERT(VARCHAR(20),@refFormid) ELSE '' END +''')',0) b
-		END
+	
 	/******************************************************************优惠券数量控制***********************************************************************/
 	--判断一种优惠券,在一个商品上,是否超过数量限制
 	--统计每个商品在每个优惠券上的使用数量.
@@ -282,6 +352,16 @@ as
 					RETURN
 				END
 		END
+	--按商品赠送的优惠券必须有商品信息
+	select @tips=''
+	select @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']只能按商品兑换,但是业务单据中不包含商品信息，无法兑换。'+char(10)
+	from #DocData a
+	where a.ExchangeMode='按商品' and isnull(a.matcode,'')=''
+	if @@ROWCOUNT>0
+		BEGIN
+			raiserror(@tips,16,1)
+			return
+		END
 	--按商品兑换的优惠券,每张只能用于一个商品
 	--需要检查每个商品使用的优惠券,是否超过优惠设置的最大张数
 	--用于检查"按商品"兑换的优惠券数量控制
@@ -290,14 +370,14 @@ as
 				--判断按商品兑换的优惠券,是否超过数量限制
 				SELECT @tips='以下优惠超过兑换数量限制.'+dbo.crlf()
 				;WITH cte AS(
-					SELECT a.seriescode,a.RefRowID, Matcode,matname,couponscode,CouponsName,a.digit,a.ExchangeCount, COUNT(a.CouponsBarcode) AS NUM
+					SELECT a.seriescode,a.RefRowID, Matcode,matname,couponscode,CouponsName,a.digit,convert(money ,a.ExchangeCount) as ExchangeCount, COUNT(a.CouponsBarcode) AS NUM
 						FROM #DocData a with(nolock)
 					WHERE ExchangeMode='按商品'
 					GROUP BY  a.seriescode,a.refrowid,Matcode,a.matname,CouponsCode,CouponsName,a.digit,a.ExchangeCount
 					)
-					SELECT @tips=@tips+'['+couponsName+']抵扣商品['+a.matname+']时仅能使用'+convert(varchar(20),a.ExchangeCount*a.digit)+'张,目前已使用'+convert(varchar(20),a.num)+'张,'+ dbo.crlf() 
+					SELECT @tips=@tips+'['+couponsName+']抵扣商品['+a.matname+']时仅能使用'+convert(varchar(20),convert(decimal,a.ExchangeCount*a.digit,1))+'张,目前已使用'+convert(varchar(20),a.num)+'张,'+ dbo.crlf() 
 					FROM cte a
-					WHERE a.num>a.ExchangeCount*a.digit
+					WHERE a.num>convert(decimal,a.ExchangeCount*a.digit,1)
 					IF @@ROWCOUNT>0
 						BEGIN
 							RAISERROR(@tips,16,1)
@@ -305,22 +385,33 @@ as
 						END
 		END
 		/***********************************************************************优惠券金额控制*****************************************************************/
+		--检查面额，抵扣金额不得大于面额
+		select @tips=''
+		select @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']抵扣金额超过面额['+convert(varchar(10),a.couponsprice)+'元],请修改抵扣金额。'
+		from #DocData a 
+		where isnull(a.CouponsPrice,0)>0
+		and isnull(a.deductAmount,0)>isnull(a.CouponsPrice,0)
+		if @@ROWCOUNT>0
+			BEGIN
+				raiserror(@tips,16,1)
+				return
+			END
 		--判断一种优惠券,在一个商品上,是否超过金额限制
 		--统计每个商品在每个优惠券上的抵扣金额
 		--用于对"按单据"兑换类优惠券的金额控制.
-		IF EXISTS(SELECT 1 FROM #DocData a WHERE ExchangeMode='按单据' AND ISNULL(a.ExchangeMoney,0)>0)
+		IF EXISTS(SELECT 1 FROM #DocData a WHERE ExchangeMode='按单据' AND ISNULL(convert(money,a.ExchangeMoney),0)>0)
 			BEGIN
 				SELECT @tips='以下优惠券超过优惠金额限制.'+dbo.clrlf()
 				;WITH cte AS(
-					SELECT couponcode,SUM(ISNULL(a.deductAmount,0)) AS num,a.ExchangeMoney, a.CouponsName
+					SELECT couponcode,SUM(ISNULL(a.deductAmount,0)) AS num,convert(money,a.ExchangeMoney) as ExchangeMoney , a.CouponsName
 					FROM #DocData a
 					WHERE  a.ExchangeMode='2'
 					GROUP BY couponcode,ExchangeCount,CouponsName
 					)
 				SELECT @tips+'['+a.CouponsName+']每单仅能优惠'+convert(varchar(10),a.ExchangeMoney)+'元,本单已优惠'+convert(varchar(10),a.num)+'元.'+dbo.crlf()
 				FROM cte a
-				WHERE isnull(a.num,0)>isnull(a.ExchangeMoney,0)
-				AND ISNULL(a.ExchangeMoney,0)>0								--只处理优惠券可抵扣金额大于0的
+				WHERE isnull(a.num,0)>isnull(convert(money,a.ExchangeMoney),0)
+				AND ISNULL(convert(money,a.ExchangeMoney),0)>0								--只处理优惠券可抵扣金额大于0的
 				IF @@ROWCOUNT>0
 					BEGIN
 						RAISERROR(@tips,16,1)
@@ -335,15 +426,22 @@ as
 					--判断按商品兑换的优惠券,是否超过优惠金额限制
 					SELECT @tips='以下优惠超过优惠金额限制.'+dbo.crlf()
 					;WITH cte AS(
-						SELECT a.seriescode,a.Matcode,a.matname,couponscode,CouponsName,SUM(ISNULL(a.deductAmount,0)) AS num ,a.ExchangeMoney ,a.digit
+						SELECT a.seriescode,a.Matcode,a.matname,couponscode,CouponsName,SUM(ISNULL(a.deductAmount,0)) AS num ,convert(money,a.ExchangeMoney) as ExchangeMoney ,a.digit
+						FROM #DocData a  
+						WHERE ExchangeMode='按商品'
+						GROUP BY a.seriescode,Matcode,a.matname,CouponsCode,CouponsName,a.ExchangeMoney,a.digit
+					)
+					select * from cte
+					;WITH cte AS(
+						SELECT a.seriescode,a.Matcode,a.matname,couponscode,CouponsName,SUM(ISNULL(a.deductAmount,0)) AS num ,convert(money,a.ExchangeMoney) as ExchangeMoney ,a.digit
 						FROM #DocData a  
 						WHERE ExchangeMode='按商品'
 						GROUP BY a.seriescode,Matcode,a.matname,CouponsCode,CouponsName,a.ExchangeMoney,a.digit
 						)
-						SELECT @tips=@tips+'['+couponsName+']抵扣商品['+a.matname+']时仅能优惠'+convert(varchar(20),isnull(a.ExchangeMoney,0))+'元,目前已使用'+convert(varchar(20),a.num)+'元,'+ dbo.crlf() 
+						SELECT @tips=@tips+''+couponsName+'抵扣商品['+a.matname+']时仅能优惠'+convert(varchar(20),isnull(a.ExchangeMoney,0)*a.digit)+'元,目前已使用'+convert(varchar(20),a.num)+'元,'+ dbo.crlf() 
 						FROM cte a
-						WHERE   isnull(a.num,0)>isnull(a.ExchangeMoney,0)*a.digit
-						AND ISNULL(a.ExchangeMoney,0)>0									--只处理优惠券可抵扣金额大于0的
+						WHERE   isnull(a.num,0)>isnull(convert(money,a.ExchangeMoney),0)*a.digit
+						AND ISNULL(convert(money,a.ExchangeMoney),0)>0									--只处理优惠券可抵扣金额大于0的
 						IF @@ROWCOUNT>0
 							BEGIN
 								RAISERROR(@tips,16,1)
