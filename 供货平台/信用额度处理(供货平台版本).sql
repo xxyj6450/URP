@@ -122,7 +122,7 @@ as
 		)
 /*************************************************传入参数检查**************************************************/
 
-if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,6052,6093) return
+if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,6052,6093,9265) return
 /*************************************************初始化数据*****************************************************/
 		--若未传入部门信息,则抛出异常
 		if ISNULL(@SDOrgID,'')=''
@@ -150,7 +150,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--取出单据信息,若存储过程外有临时表,则优先从临时表取出数据
 				if object_id('tempdb.dbo.Unicom_Orders') IS not null
 					BEGIN
-						select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0),@DeductAmount=isnull(uo.deductamount,0)
+						select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0),@DeductAmount=isnull(uo.DeductAmout,0)
 						from #Unicom_Orders uo with(nolock)
 						where uo.DocCode=@Doccode
 						select @Rowcount=@@ROWCOUNT
@@ -202,35 +202,27 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		if @Formid in(9244)
 			begin
 				--取出单据信息,若存储过程外有临时表,则优先从临时表取出数据
-				if object_id('tempdb.dbo.Unicom_Orders') is null
+				if object_id('tempdb.dbo.Unicom_Orders') is not null
 					BEGIN
-						select  @ChangeAmount=isnull(-uo.totalmoney2,0)+isnull(uo.commission,0)+isnull(@Rewards,0),@Commission=isnull(uo.commission,0),
-						@Rewards=isnull(uo.rewards,0), @ChangeFrozenAmount=0,@Event='开户返销补回信用额度.'
+						select  @ChangeAmount=isnull(-uo.totalmoney2,0)+isnull(uo.commission,0)+isnull(uo.Rewards,0)+isnull(uo.DeductAmout,0),@Commission=isnull(uo.commission,0),
+						@DeductAmount =isnull(uo.DeductAmout,0),@Rewards=isnull(uo.rewards,0), @ChangeFrozenAmount=0,@Event='开户返销补回信用额度.'
+						from #Unicom_Orders uo with(nolock)
+						where uo.DocCode=@Doccode
+						select @Rowcount=@@ROWCOUNT
+					end
+				if @Rowcount=0
+					begin
+						select  @ChangeAmount=isnull(-uo.totalmoney2,0)+isnull(uo.commission,0)+isnull(uo.Rewards,0)+isnull(uo.DeductAmout,0),@Commission=isnull(uo.commission,0),
+						@DeductAmount =isnull(uo.DeductAmout,0), @Rewards=isnull(uo.rewards,0), @ChangeFrozenAmount=0,@Event='开户返销补回信用额度.'
 						from Unicom_Orders uo with(nolock)
 						where uo.DocCode=@Doccode
 						select @Rowcount=@@ROWCOUNT
 					END
-				else
+				if @ROWCOUNT=0
 					BEGIN
-						select  @ChangeAmount=isnull(-uo.totalmoney2,0)+isnull(uo.commission,0)+isnull(@Rewards,0),@Commission=isnull(uo.commission,0),
-						@Rewards=isnull(uo.rewards,0), @ChangeFrozenAmount=0,@Event='开户返销补回信用额度.'
-						from #Unicom_Orders uo with(nolock)
-						where uo.DocCode=@Doccode
-						select @Rowcount=@@ROWCOUNT
-						if @ROWCOUNT=0
-							BEGIN
-								select  @ChangeAmount=isnull(-uo.totalmoney2,0)+isnull(uo.commission,0)+isnull(@Rewards,0),@Commission=isnull(uo.commission,0),
-								@Rewards=isnull(uo.rewards,0), @ChangeFrozenAmount=0,@Event='开户返销补回信用额度.'
-								from Unicom_Orders uo with(nolock)
-								where uo.DocCode=@Doccode
-								select @Rowcount=@@ROWCOUNT
-							END
+						raiserror('单据不存在,无法对信用额度进行更改.',16,1)
+						return
 					END
-					if @ROWCOUNT=0
-						BEGIN
-							raiserror('单据不存在,无法对信用额度进行更改.',16,1)
-							return
-						END
 				select @ChangeCredit=@ChangeAmount,@ChangeFrozenAmount=0
 				--取出上级门店,作为信用额度控制
 				select @AccountSdorgid=sdorgid  from oSDOrg os with(nolock) where os.rowid=@ParentRowID
@@ -446,8 +438,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		--退货单,增加信用额度
 		if @Formid in(4951)
 			BEGIN
-				select @SDOrgID =os.sdorgid,@ChangeAmount = isnull(-cavermoney, 0),@AccountSdorgid=sph.cltCode2,
-				       @ChangeCredit = isnull(-cavermoney,0),@ChangeFrozenAmount = 0,@Event = '退货单退回信用额度.'
+				select @SDOrgID =os.sdorgid,@ChangeAmount = isnull(-cavermoney, 0),@AccountSdorgid=sph.cltCode2,@DeductAmount=isnull(sph.DeductAmout,0),
+				       @ChangeCredit = isnull(-cavermoney,0)+isnull(sph.DeductAmout,0),@ChangeFrozenAmount = 0,@Event = '退货单退回信用额度.'
 				from   sPickorderHD sph with(nolock)
 				       inner join oStorage os with(nolock)on  sph.instcode = os.stCode
 				where  DocCode = @Doccode
@@ -510,6 +502,26 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						and @Formid in(4956)
 					end
 			end
+			--加盟商售后维修工单
+			if @Formid in(9265)
+				BEGIN
+					select @ChangeAmount=isnull(price1,0)
+					from Mobilerepairdoc with(nolock)
+					where DocCode=@Doccode
+					--确认报价冻结额度
+					if @OptionID='1'
+						BEGIN
+							select @ChangeCredit=0,@ChangeFrozenAmount=isnull(@ChangeAmount,0),@Event='售后维修工单冻结额度.',@FrozenStatus='待处理'
+						END
+					--厂家返回扣减额度
+					if @OptionID=''
+						BEGIN
+							select @ChangeCredit=isnull(@ChangeAmount,0),@ChangeFrozenAmount=-isnull(@ChangeAmount,0),
+							@FrozenStatus='已处理',@RefCode=@Doccode,@SourceDoccode=@Doccode,@Event='售后维护扣减额度.'
+						END
+					--取出上级门店,作为信用额度控制
+				select @AccountSdorgid=sdorgid  from oSDOrg os with(nolock) where os.rowid=@ParentRowID
+				END
 /******************************************************统一检查信用额度******************************************************/
 		--若信用额度部门信息为空,则抛出异常
 		if ISNULL(@AccountSdorgid,'')=''
