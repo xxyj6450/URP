@@ -1,11 +1,11 @@
 /*
 过程名称：sp_CheckPresentCoupons
 功能描述：校验优惠券赠送规则
-参数：见声名;除过程的参数外，还需要传入一个#DocData的临时表，在此临时表中存储业务数据和优惠券数据，本过程仅根据此数据源进行校验。
+参数：见声名;除过程的参数外，还需要传入一个#CouponsDocData的临时表，在此临时表中存储业务数据和优惠券数据，本过程仅根据此数据源进行校验。
 返回值：
 编写：三断笛
 备注：
-#DocData可按具体业务传入具体值
+#CouponsDocData可按具体业务传入具体值
 */
 alter proc sp_CheckPresentCoupons
 	@FormID int,
@@ -16,16 +16,16 @@ alter proc sp_CheckPresentCoupons
 	@CustomerCode varchar(50)='',
 	@PackageID varchar(50)='',
 	@ComboCode int=0,
-	@OptionID varchar(200)='',
+	@OptionID varchar(200)='',					--若传入值为#PreCheck#，则仅限制优惠券状态必须为在库或已赠。
 	@Usercode varchar(50)=''
 as
 	BEGIN
 		set NOCOUNT on;
 		declare @tips varchar(max)
 		--若未传入数据源，则自己组织
-		if object_id('tempdb.dbo.#Docdata') is NULL
+		if object_id('tempdb.dbo.#CouponsDocData') is NULL
 			BEGIN
-				CREATE TABLE #DocData(
+				CREATE TABLE #CouponsDocData(
 					Doccode VARCHAR(20),
 					DocDate DATETIME,
 					FormID INT,
@@ -94,7 +94,7 @@ as
 				--将待处理数据放至临时表
 				IF @Formid IN(2419)
 					begin
-						INSERT INTO #DocData
+						INSERT INTO #CouponsDocData
 							(  Doccode,   DocDate,   FormID,   Doctype,   
 								RefFormID,   Refcode,   packageID,   ComboCode,   
 								SdorgID,   dptType,   SdorgPath,   
@@ -128,7 +128,7 @@ as
 				if @FormID in(9201)
 					BEGIN
 						--将待处理数据放至临时表
-								INSERT INTO #DocData
+								INSERT INTO #CouponsDocData
 									(  Doccode,   DocDate,   FormID,   Doctype,   
 										RefFormID,   Refcode,   packageID,   ComboCode,   
 										SdorgID,   dptType,   SdorgPath,   
@@ -172,7 +172,7 @@ as
 							from Unicom_Orders uo with(nolock) where uo.DocCode=@Doccode
 							and isnull(uo.matCouponsbarcode,'')<>''
 						)
-						INSERT INTO #DocData
+						INSERT INTO #CouponsDocData
 							(  Doccode,   DocDate,   FormID,   Doctype,   
 								RefFormID,   Refcode,   packageID,   ComboCode,   
 								SdorgID,   dptType,   SdorgPath,   
@@ -207,29 +207,29 @@ as
 					BEGIN
 						update a
 							set a.PackageType=isnull(b.DocType,'')
-						From #DocData a left join policy_h b WITH(NOLOCK) on a.packageid=b.doccode
+						From #CouponsDocData a left join policy_h b WITH(NOLOCK) on a.packageid=b.doccode
 					END
 				--处理中文
-				update #DocData
+				update #CouponsDocData
 				set PresentCount= commondb.dbo.REGEXP_Replace(PresentCount, '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#'),
 				PresentMoney=commondb.dbo.REGEXP_Replace(PresentMoney,  '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#')
 				where ISNULL(PresentMoney,'')!='' OR ISNULL(PresentCount,'')!=''
-				select * from #DocData a
+				--select * from #CouponsDocData a
 				--根据表达式计算可兑换数量和金额.若抵扣数量和抵扣额度本身已经是数字,就不再执行更新了.否则按表达式处理.
-				IF    EXISTS (SELECT 1 FROM #DocData a WHERE ISNUMERIC(ISNULL(a.PresentCount,'1'))=0  )
+				IF    EXISTS (SELECT 1 FROM #CouponsDocData a WHERE ISNUMERIC(ISNULL(a.PresentCount,'1'))=0  )
 					BEGIN
 							print 'Select * From fn_getFormulaFields('''+CONVERT(VARCHAR(20),@formid)+CASE WHEN ISNULL(@refFormid,'')!='' THEN ','+CONVERT(VARCHAR(20),@refFormid) ELSE '' END +''')'
 						UPDATE  a
-						SET a.PresentCount=convert(int,b.data1) 
-						FROM #DocData a OUTER APPLY dbo.ExecuteTable(0,ISNULL(a.PresentCount,'1'),
-						'Select * From #DocData','CouponsBarcode='''+a.CouponsBarcode+'''',-1,
+						SET a.PresentCount=convert(float,b.data1) 
+						FROM #CouponsDocData a OUTER APPLY dbo.ExecuteTable(0,ISNULL(a.PresentCount,'1'),
+						'Select * From #CouponsDocData','CouponsBarcode='''+a.CouponsBarcode+'''',-1,
 						'Select * From fn_getFormulaFields('''+CONVERT(VARCHAR(20),@formid)+CASE WHEN ISNULL(@refFormid,'')!='' THEN ','+CONVERT(VARCHAR(20),@refFormid) ELSE '' END +''')',0) b
 					
 					END
 			END
-		select * from #DocData
+		--select * from #CouponsDocData
 		--若不存在优惠券，则直接退出了
-		if not exists(select 1 from #DocData where isnull(CouponsBarcode,'')<>'')
+		if not exists(select 1 from #CouponsDocData where isnull(CouponsBarcode,'')<>'')
 			BEGIN
 				print '没有优惠券业务数据,操作中止.'
 				return -1
@@ -238,20 +238,37 @@ as
 		--来源方式为○1，○3，○5需要赠送,检查优惠券状态
 		--来源方式为○1，○3，○5需要赠送,检查优惠券状态
 		SELECT @tips='' 
-		SELECT @tips=@tips+'优惠券'+isnull(a.CouponsName,'')+'['+a.CouponsBarcode+']'+'当前状态为['+ISNULL(a.state,'不存在')+'],无法赠送。'+dbo.crlf()
-		FROM #DocData a  with(nolock)
-		WHERE isnull(a.SourceMode,1) IN(1,2)
-		AND isnull(a.[STATE],'')!='在库'
-		IF @@ROWCOUNT>0
+		if @OptionID='#Precheck#'
 			BEGIN
-				drop TABLE #DocData
-				RAISERROR(@tips,16,1)
-				return
+				SELECT @tips=@tips+'优惠券'+isnull(a.CouponsName,'')+'['+a.CouponsBarcode+']'+'当前状态为['+ISNULL(a.state,'不存在')+'],无法赠送。'+dbo.crlf()
+				FROM #CouponsDocData a  with(nolock)
+				WHERE isnull(a.SourceMode,1) IN(1,2)
+				AND isnull(a.[STATE],'') not in('已赠','在库')
+				IF @@ROWCOUNT>0
+					BEGIN
+						drop TABLE #CouponsDocData
+						RAISERROR(@tips,16,1)
+						return
+					END
 			END
+		else
+			BEGIN
+				SELECT @tips=@tips+'优惠券'+isnull(a.CouponsName,'')+'['+a.CouponsBarcode+']'+'当前状态为['+ISNULL(a.state,'不存在')+'],无法赠送。'+dbo.crlf()
+				FROM #CouponsDocData a  with(nolock)
+				WHERE isnull(a.SourceMode,1) IN(1,2)
+				AND isnull(a.[STATE],'')!='在库'
+				IF @@ROWCOUNT>0
+					BEGIN
+						drop TABLE #CouponsDocData
+						RAISERROR(@tips,16,1)
+						return
+					END
+			END
+		
 		--检查优惠券是否已启用
 		select @tips=''
 		select @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']未启用，禁止使用。'+char(10)
-		from #DocData a
+		from #CouponsDocData a
 		where isnull(Valid,0)=0
 		if @@ROWCOUNT>0
 			BEGIN
@@ -261,7 +278,7 @@ as
 		--有效期控制
 		SELECT @tips='以下优惠券已过有效期.'+dbo.crlf()
 		SELECT @tips=@tips+a.CouponsBarcode+'['+a.CouponsName+']'+dbo.crlf()
-		FROM #DocData a
+		FROM #CouponsDocData a
 		WHERE (
 			--当前日期不能小于优惠券资料中的起始日期和优惠券表中的起始日期,若任何一项起始日期设置为空,则默认为getdate()
 			(GETDATE()<ISNULL(a.BeginDate,GETDATE()) OR GETDATE()<ISNULL(a.beginValidDate,GETDATE())
@@ -276,7 +293,7 @@ as
 		--判断优惠券是否可用于指定功能
 		select @tips=''
 		select @tips=@tips+a.couponsname+'['+a.couponsbarcode+']不可用于本业务.'+char(10)
-		from #DocData a where isnull(nullif(ltrim(rtrim(a.PresentFormGroup)),''),'9201')!='9201'												--若未设置可赠送功能号，或设置为9201则任何业务可用
+		from #CouponsDocData a where isnull(nullif(ltrim(rtrim(a.PresentFormGroup)),''),'9201')!='9201'												--若未设置可赠送功能号，或设置为9201则任何业务可用
 		and  a.formid not in( select list from commondb.dbo.SPLIT(isnull(a.PresentFormGroup,'9201'),',') )	
 		and (isnull(a.RefFormID,0)=0 or a.refformid not in( select list from commondb.dbo.SPLIT(isnull(a.PresentFormGroup,'9201'),',')))
 		if @@ROWCOUNT>0
@@ -288,7 +305,7 @@ as
 		SELECT @tips='以下优惠券只能使用一次.'+dbo.crlf()
 		;WITH cte AS(
 			SELECT a.CouponsBarcode,a.CouponsName,COUNT(a.CouponsBarcode) AS num
-			FROM #DocData a
+			FROM #CouponsDocData a
 			GROUP BY a.CouponsBarcode,a.CouponsName
 			)
 		SELECT @tips=@tips+a.CouponsBarcode+'['+a.CouponsName+']已使用'+convert(VARCHAR(5),a.num)+'次.'+dbo.crlf()
@@ -303,13 +320,13 @@ as
 	--判断一种优惠券,在一个商品上,是否超过数量限制
 	--统计每个商品在每个优惠券上的使用数量.
 	--用于对"按单据"兑换类优惠券的数量控制.
-	IF EXISTS(SELECT 1 FROM #DocData WHERE PresentMode='按单据')
+	IF EXISTS(SELECT 1 FROM #CouponsDocData WHERE PresentMode='按单据')
 		BEGIN
  
 			SELECT @tips='以下优惠券超过赠送数量限制.'+dbo.crlf()
 			;WITH cte AS(
 				SELECT couponscode,COUNT(CouponsBarcode) AS num,a.PresentCount, a.CouponsName
-				FROM #DocData a
+				FROM #CouponsDocData a
 				WHERE  a.PresentMode='按单据'
 				GROUP BY couponscode,a.PresentCount,CouponsName
 				)
@@ -325,7 +342,7 @@ as
 	--按商品赠送的优惠券必须有商品信息
 	select @tips=''
 	select @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']只能按商品赠送,但是业务单据中不包含商品信息，无法赠送。'+char(10)
-	from #DocData a
+	from #CouponsDocData a
 	where a.PresentMode='按商品' and isnull(a.matcode,'')=''
 	if @@ROWCOUNT>0
 		BEGIN
@@ -335,30 +352,38 @@ as
 	--按商品兑换的优惠券,每张只能用于一个商品
 	--需要检查每个商品使用的优惠券,是否超过优惠设置的最大张数
 	--用于检查"按商品"兑换的优惠券数量控制
-	IF EXISTS(SELECT 1 FROM #DocData WHERE PresentMode='按商品')
+	
+	IF EXISTS(SELECT 1 FROM #CouponsDocData WHERE PresentMode='按商品')
 		BEGIN
+				;WITH cte AS(
+					SELECT a.seriescode,a.RefRowID, Matcode,matname,couponscode,CouponsName,a.digit,convert(money,a.PresentCount) as PresentCount, COUNT(a.CouponsBarcode) AS NUM
+						FROM #CouponsDocData a with(nolock)
+					WHERE ExchangeMode='按商品'
+					GROUP BY  a.seriescode,a.refrowid,Matcode,a.matname,CouponsCode,CouponsName,a.digit,a.PresentCount
+				)
+				select * from cte
 				--判断按商品兑换的优惠券,是否超过数量限制
 				SELECT @tips='以下优惠超过兑换数量限制.'+dbo.crlf()
 				;WITH cte AS(
-					SELECT a.seriescode,a.RefRowID, Matcode,matname,couponscode,CouponsName,a.digit,a.PresentCount, COUNT(a.CouponsBarcode) AS NUM
-						FROM #DocData a with(nolock)
+					SELECT a.seriescode,a.RefRowID, Matcode,matname,couponscode,CouponsName,a.digit,convert(float,a.PresentCount) as PresentCount, COUNT(a.CouponsBarcode) AS NUM
+						FROM #CouponsDocData a with(nolock)
 					WHERE ExchangeMode='按商品'
 					GROUP BY  a.seriescode,a.refrowid,Matcode,a.matname,CouponsCode,CouponsName,a.digit,a.PresentCount
 					)
-					SELECT @tips=@tips+'['+couponsName+']抵扣商品['+a.matname+']时仅能使用'+convert(varchar(20),a.PresentCount*a.digit)+'张,目前已使用'+convert(varchar(20),a.num)+'张,'+ dbo.crlf() 
+					SELECT @tips=@tips+'['+couponsName+']抵扣商品['+a.matname+']时仅能使用'+convert(varchar(20),convert(decimal,a.PresentCount*a.digit,2))+'张,目前已使用'+convert(varchar(20),a.num)+'张,'+ dbo.crlf() 
 					FROM cte a
-					WHERE isnull(a.num,0)>isnull(a.PresentCount*a.digit,0)
+					WHERE isnull(a.num,0)>isnull(convert(decimal,a.PresentCount*a.digit,1),0)
 					IF @@ROWCOUNT>0
 						BEGIN
 							RAISERROR(@tips,16,1)
 							return
 						END
 		END
-		--select * from #DocData
+		--select * from #CouponsDocData
 		--执行赠送规则判断
 		SELECT @tips ='以下优惠券不符合赠送规则,请仔细查看优惠券使用手册!'+dbo.crlf()
 		SELECT @tips=@tips+a.couponsName+'['+a.couponsbarcode+']'+dbo.crlf()
-		FROM #DocData a
+		FROM #CouponsDocData a
 		where NOT EXISTS(SELECT 1 FROM   Strategy_Coupons sc  with(nolock)  
 						WHERE a.CouponsCode=sc.CouponsCode 
 						AND sc.Straytegygroup='02.01.01'
@@ -367,7 +392,7 @@ as
 						AND (ISNULL(sc.SdorgID,'')='' OR a.SdorgPath LIKE '%/'+sc.SdorgID+'/%')
 						AND (ISNULL(sc.AreaID,'')='' OR EXISTS(SELECT 1 FROM commondb.dbo.[SPLIT](ISNULL(sc.AreaID,''),',') s WHERE a.AreaPath LIKE '%/'+s.List+'/%'))
 						AND convert(bit,dbo.ExecuteScalar(0, commondb.dbo.REGEXP_Replace(ISNULL(NULLIF(sc.Filter,''),'1'),  '(?:^|\b)(?<!&|''|#)((\d:)?[\u4e00-\u9fa5]+)(?!&|''|#)(?:$|\b)','#$1#')
-						,'Select * From #DocData','CouponsBarcode='''+a.CouponsBarcode+'''',-1,
+						,'Select * From #CouponsDocData','CouponsBarcode='''+a.CouponsBarcode+'''',-1,
 						'Select * From fn_getFormulaFields(''9146,'+CONVERT(VARCHAR(20),@formid)+CASE WHEN ISNULL(@refFormid,'')!='' THEN ','+CONVERT(VARCHAR(20),@refFormid) ELSE '' END +''')',0))=1
 		)
 		AND EXISTS(SELECT 1 FROM   Strategy_Coupons sc    with(nolock)
@@ -376,7 +401,7 @@ as
  
 		IF @@ROWCOUNT>0
 			BEGIN
-				drop TABLE #DocData
+				drop TABLE #CouponsDocData
 				RAISERROR(@tips,16,1)
 				return
 			END

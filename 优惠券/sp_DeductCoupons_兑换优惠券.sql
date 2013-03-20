@@ -5,7 +5,7 @@ alter proc sp_DeductCoupons
 	@Refcode varchar(50)='',
 	@Stcode varchar(50)='',
 	@Customercode varchar(50)='',
-	@OptionID varchar(50)='',
+	@OptionID varchar(50)='',						--若传入#Skipcheck#则不检查
 	@Usercode varchar(50)='',
 	@TerminalID varchar(50)=''
 as
@@ -30,18 +30,20 @@ as
 						from Unicom_Orders uo with(nolock)
 						where uo.DocCode=@Refcode
 					END
-				--校验兑换规则
-				BEGIN TRY
-					exec sp_checkDeductCoupons @formid,@doccode,@Refformid,@Refcode,@Stcode,@Customercode,@PackageId,@ComboCode,@optionID,@userCode
-				END TRY
-				BEGIN CATCH
-					select @tips=dbo.getLastError('优惠券兑换规则校验失败。')
-					raiserror(@tips,16,1)
-					return
-				END CATCH
+				if @OptionID<>'#SkipCheck#'
+					BEGIN
+						--校验兑换规则
+						BEGIN TRY
+							exec sp_checkDeductCoupons @formid,@doccode,@Refformid,@Refcode,@Stcode,@Customercode,@PackageId,@ComboCode,@optionID,@userCode
+						END TRY
+						BEGIN CATCH
+							select @tips=dbo.getLastError('优惠券兑换规则校验失败。')
+							raiserror(@tips,16,1)
+							return
+						END CATCH
+					END
+				
 				/************************************************************************更新优惠券状态******************************************************/
-				--如果@optionID不为0,则不作更新
-				IF ISNULL(@optionID,'0')  IN('check') RETURN
 				--若本机为URP主服务器,则更新自己,否则更新URP主服务器
 				
 				UPDATE iCoupons
@@ -84,15 +86,15 @@ as
 						UPDATE sPickorderHD
 						SET DeductAmout = @deductAmout
 						WHERE DocCode=@refcode
-						AND FormID=@refFormid
+						AND FormID=@refFormid              
 
 						UPDATE spickorderitem SET done=1 WHERE doccode=@doccode
 						--修改明细表
 						update a
-						set a.DeductAmout=b.DeductAmout,
+						set a.DeductAmout=b.DeductAmout,a.CouponsBarCode=b.CouponsBarCode,
 						done=0
-						from spickorderitem a WITH(NOLOCK),coupons_d b
-						where a.doccode=@refcode
+						from spickorderitem a WITH(NOLOCK) LEFT JOIN coupons_d b
+						on a.doccode=@refcode
 							and b.doccode=@doccode
 							and a.matcode=b.matcode
 							and a.rowid=b.RefRowID
@@ -106,11 +108,12 @@ as
 						AND FormID=@refFormid
 						--修改明细表
 						update a
-						set a.DeductAmout=b.DeductAmout
-						from unicom_orderdetails a   with(nolock),coupons_d b   with(nolock)
-						where a.doccode=@refcode
+						set a.DeductAmout=b.DeductAmout,a.CouponsBarCode=b.CouponsBarCode
+						from unicom_orderdetails a   with(nolock) LEFT join coupons_d b   with(nolock)			--用LEFT JOIN性能降低，但可清除优惠券兑换单中没有，但在单据中还有的优惠券,保持数据一致。
+						on a.doccode=@refcode
 							and b.doccode=@doccode
 							and a.matcode=b.matcode
+							and a.rowid=b.RefRowID
 					END
 				return
 	END

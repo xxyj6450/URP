@@ -5,7 +5,7 @@ alter proc sp_PresentCoupons
 	@Refcode varchar(50)='',
 	@Stcode varchar(50)='',
 	@Customercode varchar(50)='',
-	@OptionID varchar(50)='',
+	@OptionID varchar(50)='',				--若传入#SkipCheck#则不检查
 	@Usercode varchar(50)='',
 	@TerminalID varchar(50)=''
 as
@@ -30,15 +30,19 @@ as
 			from Unicom_Orders uo with(nolock)
 			where uo.DocCode=@Refcode
 		END
-		--校验赠送规则
-		BEGIN TRY
-			exec sp_checkPresentCoupons @formid,@doccode,@refFormid,@optionID,@userCode
-		END TRY
-		BEGIN CATCH
-			select @tips=dbo.getLastError('优惠券赠送规则校验失败。')
-			raiserror(@tips,16,1)
-			return
-		END CATCH
+		if @OptionID<>'#SkipCheck#'
+			BEGIN
+				--校验赠送规则
+				BEGIN TRY
+					exec sp_checkPresentCoupons @formid,@doccode,@refFormid,@optionID,@userCode
+				END TRY
+				BEGIN CATCH
+					select @tips=dbo.getLastError('优惠券赠送规则校验失败。')
+					raiserror(@tips,16,1)
+					return
+				END CATCH
+			END
+		
 		--修改优惠券状态
 		UPDATE iCoupons
 		SET	[State] = '已赠',

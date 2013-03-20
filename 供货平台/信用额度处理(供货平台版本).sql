@@ -88,6 +88,7 @@ as
 		        @ChangeFrozenAmount  money,							--本单冻结额度
 				@ChangeAmount	money,									--应收金额.该字段在提交审核时是冻结金额,在确认时是扣额度金额.
 				@Commission	money,										--佣金
+				@DeductAmount money,									--现金奖抵扣金额
 				@Rewards	money,												--现金奖励
 				@Refcode varchar(50),										--引用单号
 				@AccountSdorgid varchar(50),							--信用额度控制门店
@@ -149,7 +150,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--取出单据信息,若存储过程外有临时表,则优先从临时表取出数据
 				if object_id('tempdb.dbo.Unicom_Orders') IS not null
 					BEGIN
-						select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0)
+						select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0),@DeductAmount=isnull(uo.deductamount,0)
 						from #Unicom_Orders uo with(nolock)
 						where uo.DocCode=@Doccode
 						select @Rowcount=@@ROWCOUNT
@@ -157,7 +158,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 					--如果没有,再努力尝试一次,不要放弃.
 					if isnull(@Rowcount,0)=0
 						BEGIN
-							select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0)
+							select @ChangeAmount=isnull(totalmoney2,0),@Commission=isnull(uo.commission,0),@Rewards=isnull(uo.rewards,0),@DeductAmount=isnull(uo.DeductAmout,0)
 							from Unicom_Orders uo with(nolock)
 							where uo.DocCode=@Doccode
 							select @Rowcount=@@ROWCOUNT
@@ -183,7 +184,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 				--确认单据,扣信用额度,减少预占额度
 				else if @OptionID=''
 					BEGIN
-						select @ChangeCredit=@ChangeAmount-@Commission,@ChangeFrozenAmount=-@ChangeAmount,
+						select @ChangeCredit=@ChangeAmount-@Commission-isnull(@DeductAmount,0),@ChangeFrozenAmount=-@ChangeAmount,
 						@Event='确认单据扣减额度,取消冻结额度.',@SourceDoccode=@Doccode,@FrozenStatus='已处理'
 					end
 				--若操作类型不存在,则抛出异常,防止非法操作
@@ -573,7 +574,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 		if isnull(@OptionID,'') in('','1') and @ControlBalance=1
 			Begin
 				 
-				if isnull(@AvailabBalance,0)+isnull(@Commission,0)+isnull(@Rewards,0)-isnull(@ChangeCredit,0)-isnull(@ChangeFrozenAmount,0)+ISNULL(@OverRunLimit,0)<0
+				if isnull(@AvailabBalance,0)+isnull(@Commission,0)+isnull(@Rewards,0)-isnull(@ChangeCredit,0)-isnull(@ChangeFrozenAmount,0)+ISNULL(@OverRunLimit,0)+isnull(@DeductAmount,0)<0
 					BEGIN
 						SELECT @tips = 
 						            '您的信用额度不足，请及时充值并确认已经通过审核的单据！' + dbo.crlf() +
@@ -583,7 +584,8 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						            '您当前可用余额:' + convert(varchar(50),ISNULL(@AvailabBalance,0)) + dbo.crlf() +
 						            '本单应扣额度:' + convert(varchar(50),isnull(@ChangeCredit,0)) + dbo.crlf() +
 						            '本单冻结额度'+convert(varchar(50),isnull(@ChangeFrozenAmount,0)) + dbo.crlf() +
-						             '本单佣金'+convert(varchar(50),isnull(@Commission,0)) + dbo.crlf() 
+						            '本单佣金'+convert(varchar(50),isnull(@Commission,0)) + dbo.crlf() +
+						            '本单优惠金额'+convert(varchar(50),isnull(@DeductAmount,0)) + dbo.crlf() 
 						 RAISERROR(@tips,16,1) 
 						 RETURN
 					END
@@ -712,10 +714,10 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						Insert into Openquery(URP11,'Select   Doccode, FormID, FormType, Docdate, DocType, 
 						   Account, [Event], SDorgID, SDorgName, OverRunLimit, 
 						   CreditAmount, FrozenAmount, ChangeFrozenAmount, ChangeCredit, 
-						   Commission, Rewards, Balance, AvailabBalance, Usercode, 
+						   Commission, Rewards,DeductAmount, Balance, AvailabBalance, Usercode, 
 						   Remark, TerminalID, FrozenStatus, refCode,AccountSdorgid,FlowInstanceID from JTURP.dbo.oSdorgCreditLog')
 						select @Doccode,@Formid,@FormType,getdate(),@Doctype,'113107',@Event,@SDOrgID,@SDorgName,@OverRunLimit,@Balance,@FrozenAmount,
-							   @ChangeFrozenAmount,@ChangeCredit,@Commission,@Rewards,isnull(@Balance,0) -isnull(@ChangeCredit,0),
+							   @ChangeFrozenAmount,@ChangeCredit,@Commission,@Rewards,@DeductAmount,isnull(@Balance,0) -isnull(@ChangeCredit,0),
 							   isnull(@AvailabBalance,0)-isnull(@ChangeFrozenAmount,0)-isnull(@ChangeCredit,0),@Usercode,@Remark,@TerminalID,
 							   CASE  
 										WHEN @FrozenStatus='已处理' and @FlowExists=1 and isnull(@FlowStatus,'')='未完成' then '待处理'
@@ -743,10 +745,10 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 						insert into oSdorgCreditLog( Doccode, FormID, FormType, Docdate, DocType, 
 						   Account, [Event], SDorgID, SDorgName, OverRunLimit, 
 						   CreditAmount, FrozenAmount, ChangeFrozenAmount, ChangeCredit, 
-						   Commission, Rewards, Balance, AvailabBalance, Usercode, 
+						   Commission, Rewards,DeductAmount, Balance, AvailabBalance, Usercode, 
 						   Remark, TerminalID, FrozenStatus, refCode,AccountSdorgid,FlowInstanceID)
 						select @Doccode,@Formid,@FormType,getdate(),@Doctype,'113107',@Event,@SDOrgID,@SDorgName,@OverRunLimit,@Balance,@FrozenAmount,
-							   @ChangeFrozenAmount,@ChangeCredit,@Commission,@Rewards,isnull(@Balance,0) -isnull(@ChangeCredit,0),
+							   @ChangeFrozenAmount,@ChangeCredit,@Commission,@Rewards,@DeductAmount,isnull(@Balance,0) -isnull(@ChangeCredit,0),
 							   isnull(@AvailabBalance,0)-isnull(@ChangeFrozenAmount,0)-isnull(@ChangeCredit,0),@Usercode,@Remark,@TerminalID,
 							   CASE  
 										WHEN @FrozenStatus='已处理' and isnull(@FlowExists,0)=1 and isnull(@FlowStatus,'')='未完成' then '待处理'
@@ -788,7 +790,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 									Exec sp_executesql @sql,N'@SourceDoccode varchar(30),@FrozenStatus varchar(20),@Doccode varchar(50)',
 									@SourceDoccode=@SourceDoccode,@FrozenStatus=@FrozenStatus,@Doccode=@Doccode
 									--若流程已结束,则尝试将未使用的优惠券还原.
-									exec URP11.JTURP.dbo.sp_UpdateCouponsFlow @Formid,@Doccode,@FlowInstanceID,'已完成','',@Usercode,@terminalid
+									--exec URP11.JTURP.dbo.sp_UpdateCouponsFlow @Formid,@Doccode,@FlowInstanceID,'已完成','',@Usercode,@terminalid
 								END
 							IF ISNULL(@FlowExists,0)=0
 								BEGIN
@@ -812,7 +814,7 @@ if @Formid not in(9102,9146,9237,9167,9244,6090,4950,2401,4956,9267,2041,4951,60
 									WHERE FlowInstanceID=@FlowInstanceID
 										   and frozenStatus  = '待处理'
 									--若流程已结束,则尝试将未使用的优惠券还原.
-									exec sp_UpdateCouponsFlow @Formid,@Doccode,@FlowInstanceID,'已完成','',@Usercode,@terminalid
+									--exec sp_UpdateCouponsFlow @Formid,@Doccode,@FlowInstanceID,'已完成','',@Usercode,@terminalid
 								END
 							IF ISNULL(@FlowExists,0)=0
 								BEGIN
