@@ -89,7 +89,9 @@ as
 					CouponsOwner VARCHAR(50),					--优惠券资料设置中的持有者
 					[OWNER] VARCHAR(50),								--实际优惠券的持有者
 					AuthKey	 VARCHAR(50),								--优惠券兑换单中用户输入的校验密码
-					CouponsAuthKey	VARCHAR(50)					--优惠券表中的校验密码
+					CouponsAuthKey	VARCHAR(50)	,				--优惠券表中的校验密码
+					Occoupyed bit,
+					OccoupyedDoccode varchar(50)
 				)
 				--将待处理数据放至临时表
 				IF @Formid IN(2419)
@@ -107,7 +109,7 @@ as
 								BeginDate,   EndDate,   Valid,   CouponsPrice,   Matcode, matname,  
 								Matgroup,   MatType,   MatgroupPath,   Price,   
 								totalMoney,   digit,   deductAmount,CouponsOwner,canOverlay,RowID,RefRowID,
-								Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey )
+								Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey,Occoupyed,OccoupyedDoccode )
 
 						select @Doccode,getdate(),@FormID,NULL as DocType,NULL,NULL,@PackageID as packageid,@combocode AS combocode,
 						o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,@Customercode,
@@ -115,7 +117,7 @@ as
 						ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,ig.PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
 						ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.Price,	s.MatCode,s.MatName,ig2.MatGroup,ig2.mattype,ig3.[PATH],
 						s.price,s.totalmoney,s.Digit,s.DeductAmout,ig.CouponsOwner,ig.canOverlay,s.RowID,newid() RefRowID,s.SeriesCode,i.beginValidDate,i.ValidDate,
-						i.CouponsOWNER,i.authKey
+						i.CouponsOWNER,i.authKey,i.Occoupyed,i.OccupyedDoccode
 						FROM  sPickorderitem s with(nolock) INNER JOIN oStorage o  with(nolock) ON o.stCode=@Stcode
 						INNER JOIN oSDOrg o2  with(nolock) ON o.sdorgid=o2.SDOrgID
 						INNER JOIN gArea g  with(nolock) ON o2.AreaID=g.areaid
@@ -140,13 +142,13 @@ as
 										ExchangeCount,   ExchangeMoney, ExchangeFormGroup,  ForceCheckStock,   
 										BeginDate,   EndDate,   Valid,   CouponsPrice,   Matcode, matname,
 										Matgroup,   MatType,   MatgroupPath,   Price,   
-										totalMoney,   digit,   deductAmount ,RowID,RefRowID,Seriescode,OWNER,CouponsAuthKey )
+										totalMoney,   digit,   deductAmount ,RowID,RefRowID,Seriescode,OWNER,CouponsAuthKey,Occoupyed,OccoupyedDoccode )
 								select ch.Doccode,ch.docdate,ch.FormID,NULL DocType,@refFormID,@Refcode DocCode,@PackageID,@ComboCode AS combocode,
 								o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,ch.cltCode,
 								cd.CouponsBarCode,i.[State],ig.CouponsCode,cd.CouponsName,ig.GroupCode,ig.CodeMode,ig.CodeLength,
 								ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,ig.PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
 								ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.price,cd.MatCode,cd.matname,ig2.MatGroup,ig2.mattype,ig3.[PATH],
-								cd.Amount,cd.Amount,cd.DeductAmout,cd.DeductAmout,cd.RowID,cd.RefRowID,cd.SeriesCode,i.CouponsOWNER,i.authkey 
+								cd.Amount,cd.Amount,cd.DeductAmout,cd.DeductAmout,cd.RowID,cd.RefRowID,cd.SeriesCode,i.CouponsOWNER,i.authkey ,i.Occoupyed,i.OccupyedDoccode
 								FROM Coupons_H ch  with(nolock) INNER JOIN oStorage o  with(nolock) ON ch.Stcode=o.stCode
 								INNER JOIN oSDOrg o2  with(nolock) ON o.sdorgid=o2.SDOrgID
 								INNER JOIN gArea g  with(nolock) ON o2.AreaID=g.areaid
@@ -158,7 +160,7 @@ as
 								WHERE ch.Doccode=@doccode
 					END
 				
-				if @FormID in(9146,9102)
+				if @FormID in(9146,9102,9237)
 					BEGIN
 						--将数据准备至临时表
 						if object_id('tempdb.dbo.#Unicom_OrderDetails') is null select * Into #Unicom_OrderDetails From Unicom_OrderDetails with(nolock) where DocCode=@Doccode
@@ -184,14 +186,16 @@ as
 								ExchangeCount,   ExchangeMoney,ExchangeFormGroup,   ForceCheckStock,   
 								BeginDate,   EndDate,   Valid,   CouponsPrice,   Matcode, matname,  
 								Matgroup,   MatType,   MatgroupPath,   Price,   
-								totalMoney,   digit,   deductAmount,CouponsOwner,canOverlay,RowID,RefRowID,Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey  )
+								totalMoney,   digit,   deductAmount,CouponsOwner,canOverlay,RowID,RefRowID,
+								Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey,Occoupyed,OccoupyedDoccode  )
 
 						select @Doccode,getdate(),@FormID,NULL as DocType,NULL,NULL,@PackageID,@Combocode AS combocode,
 						o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,@Customercode,
 						s.CouponsBarCode,i.state [State],ig.CouponsCode,ig.CouponsName, ig.GroupCode,ig.CodeMode,ig.CodeLength,
 						ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
 						ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.price,	s.MatCode,s.MatName,ig2.MatGroup,ig2.mattype,ig3.[PATH],
-						s.price,s.totalmoney,s.Digit,s.DeductAmout,ig.CouponsOwner,ig.canOverlay,s.RowID,newid() RefRowID,s.SeriesCode,i.beginValidDate,i.ValidDate,i.CouponsOWNER,i.authKey
+						s.price,s.totalmoney,s.Digit,s.DeductAmout,ig.CouponsOwner,ig.canOverlay,s.RowID,newid() RefRowID,
+						s.SeriesCode,i.beginValidDate,i.ValidDate,i.CouponsOWNER,i.authKey,i.Occoupyed,i.OccupyedDoccode
 						FROM cte_unicom_orderdetails  s  with(nolock) INNER JOIN oStorage o  with(nolock) ON o.stCode=@Stcode
 						INNER JOIN oSDOrg o2  with(nolock) ON o.sdorgid=o2.SDOrgID
 						INNER JOIN gArea g  with(nolock) ON o2.AreaID=g.areaid
@@ -264,7 +268,17 @@ as
 						return
 					END
 			END
-		
+		select @tips=''
+		select @tips=@tips+i.couponsname+'['+i.couponsbarcode+']已被单据['+isnull(i.OccoupyedDoccode,'')+']占用，禁止重复使用.'
+		from #CouponsDocData i
+		where i.Occoupyed=1
+		if @@ROWCOUNT>0
+			BEGIN
+				raiserror(@tips,16,1)
+				return
+			END
+		--若没有待赠送的优惠券,则退出检查
+		if not exists(select 1 from #CouponsDocData where STATE='在库') return
 		--检查优惠券是否已启用
 		select @tips=''
 		select @tips=@tips+a.CouponsName+'['+a.CouponsBarcode+']未启用，禁止使用。'+char(10)

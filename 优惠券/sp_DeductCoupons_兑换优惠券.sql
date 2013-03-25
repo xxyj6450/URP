@@ -72,13 +72,11 @@ as
 						RAISERROR(@tips,16,1)
 						return
 					END
-				;WITH ctea AS(SELECT SUM(isnull(deductamout,0)) AS totalmoney FROM Coupons_D cd WHERE cd.Doccode=@doccode)
+				 SELECT @deductAmout=SUM(isnull(deductamout,0)) FROM Coupons_D cd with(nolock) WHERE cd.Doccode=@doccode
 				UPDATE coupons_h 
-					SET TotalDeductAmout = a.totalmoney 
-				FROM ctea a 
+					SET TotalDeductAmout = @deductAmout , @refFormid=refformid,@refcode=refcode
 				WHERE coupons_h.Doccode=@doccode
-				SELECT @refFormid=refformid,@refcode=refcode,@deductAmout=ch.TotalDeductAmout
-				  FROM Coupons_H ch   with(nolock) WHERE ch.Doccode=@doccode
+				 
 				  /**********************************************************回填业务单据********************************************************************/
 				--优惠金额回填业务单据
 				IF @refFormid IN(2419)
@@ -103,9 +101,7 @@ as
 					BEGIN
 						UPDATE Unicom_Orders
 						SET DeductAmout = @deductAmout
-						WHERE DocCode=@doccode
-						AND FormID=@formid
-						AND FormID=@refFormid
+						WHERE DocCode=@Refcode
 						--修改明细表
 						update a
 						set a.DeductAmout=b.DeductAmout,a.CouponsBarCode=b.CouponsBarCode

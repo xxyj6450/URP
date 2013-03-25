@@ -86,14 +86,17 @@ AS
 			END
 		IF @bitHasMaxcode=0
 			BEGIN
+				--先删除原有的,一个优惠券只保持一行数据
+				delete from Coupons_MaxCode where CouponsCode=@CouponsCode
+				--插入新的数据
 				INSERT INTO Coupons_MaxCode(CouponsCode,MaxNumber,[Datetime])
 				SELECT @CouponsCode,@GenerateCount,convert(varchar(10),@MaxDate,120)
 			END
 		ELSE IF @bitHasMaxcode=1
 			BEGIN
 				UPDATE Coupons_MaxCode	
-					SET MaxNumber = MaxNumber+@GenerateCount,
-					[Datetime]=CONVERT(VARCHAR(10),@MaxDate,120)
+					SET MaxNumber = MaxNumber+@GenerateCount
+					--[Datetime]=CONVERT(VARCHAR(10),@MaxDate,120)
 				WHERE CouponsCode=@CouponsCode
 			END
 		--若基数不为0,且基数小于最大数,则会出现编码重复,抛出异常

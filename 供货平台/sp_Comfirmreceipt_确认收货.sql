@@ -17,9 +17,9 @@
 示例:
 
 HYQ201303220000000010
-
+ 
 begin tran
-exec sp_ComfirmReceipt 'JDC2013020100000',4950,'SYSTEM','2.1.769.26.01','111.769','','FF2DCB8D-62C1-463C-8684-1A869E2F1117','1',''
+exec sp_ComfirmReceipt 'JDC2013013100000',4950,'SYSTEM','2.1.769.26.01','111.769','','FF2DCB8D-62C1-463C-8684-1A869E2F1117','1',''
  select * from urp11.jturp.dbo.icoupons where stcode='2.1.769.26.01'
  select * from urp11.jturp.dbo.strategylog 
  select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013012300000'
@@ -27,6 +27,7 @@ exec sp_ComfirmReceipt 'JDC2013020100000',4950,'SYSTEM','2.1.769.26.01','111.769
 	set state='送货'
  where seriescode='111222222222222'
   rollback
+  commit
  set xact_abort on
  begin tran
 exec sp_ComfirmReceipt 'JDC2013010600260',4950,'SYSTEM','2.1.512.02.50','001.512','','FF2DCB8D-62C1-463C-8684-1A869E2F1117',''
@@ -274,7 +275,7 @@ as
 		begin try
 			--执行优惠券策略
 			exec @ret=URP11.JTURP.dbo.sp_DistributedExecuteStrategy @Formid,@Doccode,4,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
-			 print '执行完了'
+ 
 			--将串号与优惠券绑定
 			if isnull(@ResultXML,'')<>''
 				BEGIN
