@@ -15,9 +15,12 @@
 	转移URP已有串号时记录操作日志;将串号转移至URP时记录操作日志.
 	回填送货单收货状态.
 示例:
+
+HYQ201303220000000010
+
 begin tran
-exec sp_ComfirmReceipt 'JDC2012121800186',4950,'SYSTEM','2.1.752.04.80','D101.01','','3389412B-3F80-423B-940E-F3CC27167BB3','1',''
- select * from urp11.jturp.dbo.icoupons where stcode='2.1.752.04.80'
+exec sp_ComfirmReceipt 'JDC2013020100000',4950,'SYSTEM','2.1.769.26.01','111.769','','FF2DCB8D-62C1-463C-8684-1A869E2F1117','1',''
+ select * from urp11.jturp.dbo.icoupons where stcode='2.1.769.26.01'
  select * from urp11.jturp.dbo.strategylog 
  select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013012300000'
  update iseries
@@ -199,7 +202,7 @@ as
 						where sph.DocCode=@Doccode
 						Insert Into #DocData(Doccode,FormID,Docdate,SDOrgID,stcode,stname,dptType,AreaID,SDOrgPath,AreaPath)
 						select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,sph.instcode,sph.instname,os.dpttype,os.AreaID,os.PATH,ga.PATH
-						From sPickorderHD sph with(nolock) inner join sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode
+						From sPickorderHD sph with(nolock) --inner join sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode
 						inner join oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID
 						inner join gArea ga with(nolock) on os.AreaID=ga.areaid
 						where sph.DocCode=@Doccode
@@ -250,24 +253,28 @@ as
 		if exists(select 1 from #DocData)
 			BEGIN
 				set @DocDataXML=(select * from #DocData for xml raw,root('root'))
+				
 				--将业务数据接入
 				set @Definition='Doccode varchar(20),	FormID int,DocDate datetime,SDOrgID varchar(50),dptType varchar(50),AreaID varchar(50),SDOrgPath varchar(200),stcode varchar(50),stName varchar(200),
 				AreaPath varchar(200),SeriesCode varchar(50),RowID varchar(50),Matcode varchar(50),MatName varchar(200),Matgroup varchar(50),MatgroupPath varchar(200),Digit int,Price money,Totalmoney money'
 				set @DataSourceXML= (select * from #DataSource ds for xml raw)
-				select @DataSourceXML='<root><DataTable TableName="#DocData" Definition="'+@Definition+'">'+@DataSourceXML
 				select @DataSourceXML='<root><DataTable TableName="#XMLDataSource" Definition="' +@Definition+'">'+@DataSourceXML+'</DataTable>'
+				--select @DataSourceXML='<DataTable TableName="#DocData" Definition="'+@Definition+'">'+@DocDataXML+'</DataTable>'
+				
 				--再将串号数据也拼入
 				select @Definition='ID int,Seriescode VARCHAR(50),	RowID VARCHAR(50),Matcode VARCHAR(50),MatName VARCHAR(50),Docitem INT,STATE VARCHAR(50)'
 				select @DataSourceXML=@DataSourceXML+'<DataTable TableName="#iSeries" Definition="'+@Definition +'">'+
 				Convert(nvarchar(max),(Select ID,Seriescode,RowID,Matcode,MatName,Docitem,state from #iSeries For xml raw))+'</DataTable></root>'
 				
 			END
+		--print @DataSourceXML
 		/***********************************************************业务处理****************************************************/
 		select @TRANCOUNT=@@TRANCOUNT
 		if @trancount=0 begin tran
 		begin try
 			--执行优惠券策略
-			exec @ret=URP11.JTURP.dbo.sp_DistributedExecuteStrategy @Formid,@Doccode,2,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
+			exec @ret=URP11.JTURP.dbo.sp_DistributedExecuteStrategy @Formid,@Doccode,4,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
+			 print '执行完了'
 			--将串号与优惠券绑定
 			if isnull(@ResultXML,'')<>''
 				BEGIN

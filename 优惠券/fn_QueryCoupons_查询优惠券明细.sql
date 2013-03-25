@@ -36,16 +36,16 @@ RETURNS @table TABLE(
 	RETURNStName VARCHAR(200),
 	ReturnDate DATETIME,
 	valid BIT,
-	validDate DATETIME,
-	Remark	VARCHAR(50),
-	UseMode VARCHAR(20) 
+	BeginvalidDate DATETIME,
+	EndValidDate datetime,
+	Remark	VARCHAR(50)
 	)
 AS
 	BEGIN
 		INSERT INTO @table
 		SELECT i.stCode,b.name40,i.CouponsCode,c.CouponsName,c.GroupCode,d.GroupName,i.CouponsBarcode,i.[State],i.Price,i.DeductAmout,i.DeducedMatcode,i.DeducedMatName,i.DeducedDigit,
 		i.InDate,indoccode,i.OutDoccode,outformid,i.OutDate,outstcode,OutstName,returndoccode,returnformid,returnstcode,returnstname,returndate,
-		i.valid,c.EndDate,i.remark,NULL
+		i.valid,c.BeginDate,c.EndDate,i.remark
 		FROM iCoupons i with(nolock)
 		inner JOIN iCouponsGeneral c with(nolock) ON i.CouponsCode=c.CouponsCode
 		inner JOIN gCouponsGroup d with(nolock) ON c.GroupCode=d.GroupCode
@@ -55,7 +55,7 @@ AS
 		AND (@CouponsBarcode='' OR i.CouponsBarcode=@CouponsBarcode)
 		AND (@CouponsGroup='' OR d.GroupCode LIKE @CouponsGroup +'%')
 		AND (@state='' OR i.[State]=@state)
-		asnd (@CouponsOwner='' or c.CouponsOWNER=@CouponsOwner)
+		and (@CouponsOwner='' or c.CouponsOWNER=@CouponsOwner)
 		and (@Owner='' or i.CouponsOWNER=@Owner)
  
 		return

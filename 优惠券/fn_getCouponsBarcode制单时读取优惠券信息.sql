@@ -60,6 +60,7 @@ AS
 				and isnull(i.Valid,1)=1
 				AND ((ISNULL(c.BeginDate,'')='' OR c.BeginDate<=GETDATE()) and(isnull(i.beginValidDate,'')='' or i.beginValidDate<=getdate()))
 				AND ((ISNULL(c.EndDate,'')='' OR c.EndDate>=GETDATE()) and isnull(i.ValidDate,'')='' or i.ValidDate>=getdate())
+				and isnull(i.Occoupyed,0)=0
 			END
 		ELSE IF @optionID=1
 			BEGIN
@@ -80,7 +81,7 @@ AS
 				and isnull(i.Valid,1)=1
 				AND ((ISNULL(c.BeginDate,'')='' OR c.BeginDate<=GETDATE()) and(isnull(i.beginValidDate,'')='' or i.beginValidDate<=getdate()))
 				AND ((ISNULL(c.EndDate,'')='' OR c.EndDate>=GETDATE()) and isnull(i.ValidDate,'')='' or i.ValidDate>=getdate())
-				 
+				 and isnull(i.Occoupyed,0)=0
 			END
 
 		return
