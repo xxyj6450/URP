@@ -6,8 +6,7 @@ alter FUNCTION [dbo].[fn_QueryCoupons](
 	@CouponsBarcode VARCHAR(50),
 	@state VARCHAR(20),
 	@CouponsGroup VARCHAR(20),
-	@CouponsOwner varchar(50),
-	@Owner varchar(50)
+	@CouponsOwner varchar(50)
 	)
 RETURNS @table TABLE(
 	stcode VARCHAR(40),
@@ -56,7 +55,7 @@ AS
 		AND (@CouponsGroup='' OR d.GroupCode LIKE @CouponsGroup +'%')
 		AND (@state='' OR i.[State]=@state)
 		and (@CouponsOwner='' or c.CouponsOWNER=@CouponsOwner)
-		and (@Owner='' or i.CouponsOWNER=@Owner)
+
  
 		return
 	END
