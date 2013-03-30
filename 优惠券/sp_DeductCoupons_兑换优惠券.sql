@@ -86,7 +86,7 @@ as
 						WHERE DocCode=@refcode
 						AND FormID=@refFormid              
 
-						UPDATE spickorderitem SET done=1 WHERE doccode=@doccode
+						/*UPDATE spickorderitem SET done=1 WHERE doccode=@doccode
 						--ÐÞ¸ÄÃ÷Ï¸±í
 						update a
 						set a.DeductAmout=b.DeductAmout,a.CouponsBarCode=b.CouponsBarCode,
@@ -95,7 +95,7 @@ as
 						on a.doccode=@refcode
 							and b.doccode=@doccode
 							and a.matcode=b.matcode
-							and a.rowid=b.RefRowID
+							and a.rowid=b.RefRowID*/
 					END
 				IF @refFormid IN(9102,9146)
 					BEGIN
