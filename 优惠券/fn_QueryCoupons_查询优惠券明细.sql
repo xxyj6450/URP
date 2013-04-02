@@ -6,7 +6,8 @@ alter FUNCTION [dbo].[fn_QueryCoupons](
 	@CouponsBarcode VARCHAR(50),
 	@state VARCHAR(20),
 	@CouponsGroup VARCHAR(20),
-	@CouponsOwner varchar(50)
+	@CouponsOwner varchar(50),
+	@Option varchar(50)
 	)
 RETURNS @table TABLE(
 	stcode VARCHAR(40),

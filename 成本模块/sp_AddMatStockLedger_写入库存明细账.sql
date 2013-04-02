@@ -190,8 +190,8 @@ as
 			   outvspdigit, salesflag, cspflag, vspflag, inouttype,end4,matcost,inrateamount)
 				SELECT companyid,sdorgid,periodid,matvalue,plantid,matcode,stcode,batchcode,formid,
 					   formname,doccode,docdate,doctype,cltcode,vndcode,docitem,rowid,digit,
-					   uom,baseuomrate,uomrate,baseuom,0,-basedigit,0,0,-basedigit,matcost,0,
-					   0,0,0,1,0,0,pricememo,end4,MatCost,ratemoney
+					   uom,baseuomrate,uomrate,baseuom,0,-basedigit,0,0,-basedigit,-matcost,0,
+					   0,0,0,1,0,0,pricememo,end4,-MatCost,ratemoney
 				FROM   VSPKOITEM with(nolock)
 				WHERE  doccode = @doccode
 			END
@@ -214,18 +214,16 @@ as
 		--从 sp_writestocklog 转入
 		if @FormID in(1512)
 			BEGIN
-				  INSERT into istockledgerlog( companyid, periodid, matvalue, plantid, matcode, 
-						 stcode, batchcode, formid, formname, doccode, docdate, doctype, 
-						 workshopid, cltcode, vndcode, docitem, docrowid, digit, uom, 
-						 baseuomrate, uomrate, baseuom, indigit, outdigit, inledgerdigit, 
+				  INSERT into istockledgerlog( companyid, periodid, plantid, matcode, 
+						 stcode,sdorgid, formid, doccode, docdate, doctype, docitem, docrowid, digit,  
+						    indigit, outdigit, inledgerdigit, 
 						 inledgeramount, outledgerdigit, outledgeramount, incspdigit, 
 						 outcspdigit, invspdigit, outvspdigit, salesflag, cspflag, vspflag, 
 						 inouttype, matcost, inrateamount)
-				  SELECT c.companyid,c.periodid,c.matvalue,c.plantid,c.matcode,c.stcode,c.batchcode,
-						 c.formid,c.formname,c.doccode,c.docdate,c.doctype,c.workshopid,c.cltcode,
-						 c.vndcode,c.DocItem,c.rowid,0,c.uom,c.baseuomrate,c.uomrate,c.baseuom,0,
-						 0,0,c.totalmoney,0,0,0,0,0,0,0,0,0,c.inouttype,c.totalmoney,c.ratemoney
-				  FROM   VMATDOC c with(nolock)						  
+				  SELECT  c.companyid,c.periodid,c.plantid,b.matcode,b.stcode,b.sdorgid,
+						 c.formid,c.doccode,c.docdate,c.doctype,b.DocItem,b.rowid,0,0,
+						 0,0,b.totalmoney,0,0,0,0,0,0,0,0,0,1,b.totalmoney,b.ratemoney
+				  FROM   imatdoc_h  c with(nolock) inner join imatdoc_d b with(nolock) on b.doccode=c.doccode	  
 				  WHERE  c.doccode = @doccode
 			END
 		--原100042过账逻辑转入
