@@ -19,8 +19,8 @@
 HYQ201303220000000010
  
 begin tran
-exec sp_ComfirmReceipt 'JDC2013013100000',4950,'SYSTEM','2.1.769.26.01','111.769','','FF2DCB8D-62C1-463C-8684-1A869E2F1117','1',''
- select * from urp11.jturp.dbo.icoupons where stcode='2.1.769.26.01'
+exec sp_ComfirmReceipt 'JDC2013040700980',4950,'SYSTEM','2.1.512.04.59','001.512','','E36D5919-925A-4C78-95FB-B9E0A2007A6F','1',''
+ select * from urp11.jturp.dbo.icoupons where stcode='2.1.512.04.59'
  select * from urp11.jturp.dbo.strategylog 
  select * from urp11.jturp.dbo.coupons_d where doccode='QZS2013012300000'
  update iseries
@@ -217,9 +217,9 @@ as
 						--生成单据数据源
 					select @sql='	Insert Into #DataSource(Doccode,FormID,Docdate,SDOrgID,dptType,stcode,stname,AreaID,SDOrgPath,AreaPath,'+char(10)
 						+' rowid,Seriescode,Matcode,MatName,Matgroup,MatgroupPath,Digit,Price,Totalmoney)'+char(10)
-						+' select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,dpttype,sph.instcode,sph.instname,AreaID,SDOrgPATH,AreaPATH,'+char(10)
+						+' select @Doccode,@Formid,convert(varchar(10),DocDate,120),sph.sdorgid2,dpttype,sph.instcode,sph.instname,AreaID,SDOrgPATH,AreaPATH,'+char(10)
 						+' RowID,Seriescode,MatCode,MatName,MatGroup,MatgroupPATH,Digit,price,totalmoney'+char(10)
-						+' From OpenQuery('+@ServerName+',''Select sph.sdorgid2,os.dpttype,sph.instcode,sph.instname,os.AreaID,os.PATH as SDOrgPath,ga.PATH as AreaPath,'+char(10)
+						+' From OpenQuery('+@ServerName+',''Select sph.sdorgid2,os.dpttype,sph.DocDate,sph.instcode,sph.instname,os.AreaID,os.PATH as SDOrgPath,ga.PATH as AreaPath,'+char(10)
 						+' sp.rowid,sp.Seriescode,sp.MatCode,img.MatName,img.MatGroup,img2.PATH as MatgroupPath,'+char(10)
 						+' sp.Digit,sp.price,sp.totalmoney'+char(10)
 						+' From '+@DatabaseName +'.dbo.sPickorderHD sph with(nolock) inner join '+@DatabaseName +'.dbo.sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode'+char(10)
@@ -231,8 +231,8 @@ as
 						--print @sql
 						exec sp_executesql @sql,N'@Doccode varchar(20),@FormID int',@Doccode=@Doccode,@Formid=@Formid
 						select @sql='	Insert Into #DocData(Doccode,FormID,Docdate,SDOrgID,stcode,stname,dptType,AreaID,SDOrgPath,AreaPath)'+char(10)
-						+' select @Doccode,@Formid,convert(varchar(10),getdate(),120),sdorgid2,instcode,instname,dpttype,AreaID,SDorgPATH,AreaPATH'+char(10)
-						+' From OpenQuery('+@ServerName+',''Select sph.sdorgid2,sph.instcode,sph.instname,sph.dpttype,os.AreaID,os.PATH as SDOrgPath,ga.PATH as AreaPath'+char(10)
+						+' select @Doccode,@Formid,convert(varchar(10),DocDate,120),sdorgid2,instcode,instname,dpttype,AreaID,SDorgPATH,AreaPATH'+char(10)
+						+' From OpenQuery('+@ServerName+',''Select sph.sdorgid2,sph.instcode,sph.instname,sph.DocDate,sph.dpttype,os.AreaID,os.PATH as SDOrgPath,ga.PATH as AreaPath'+char(10)
 						+' From '+@DatabaseName +'.dbo.sPickorderHD sph with(nolock) '+char(10)
 						+'	inner join '+@DatabaseName +'.dbo.oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID'+char(10)
 						+'	inner join '+@DatabaseName +'.dbo.gArea ga with(nolock) on os.AreaID=ga.areaid'+char(10)

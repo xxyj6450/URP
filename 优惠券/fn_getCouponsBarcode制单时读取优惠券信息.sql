@@ -76,7 +76,7 @@ AS
 				AND (@CouponsCode='' OR i.CouponsCode=@CouponsCode)
 				AND (@CouponsBarcode='' OR i.CouponsBarcode=@CouponsBarcode)
 				AND (@CouponsGroup='' OR d.GroupCode LIKE @CouponsGroup +'%')
-				AND (@stcode='' OR i.stCode=@stcode)
+				AND (@stcode='' or i.stcode='119.769' OR i.stCode=@stcode)
 				and c.valid=1
 				and isnull(i.Valid,1)=1
 				AND ((ISNULL(c.BeginDate,'')='' OR c.BeginDate<=GETDATE()) and(isnull(i.beginValidDate,'')='' or i.beginValidDate<=getdate()))

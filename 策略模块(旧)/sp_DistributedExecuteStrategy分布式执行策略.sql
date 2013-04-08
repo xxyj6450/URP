@@ -90,7 +90,7 @@ as
 			END
 			select @sql=@sql+'EXEC @ret= sp_ExecuteStrategy ''' +convert(varchar(20),ISNULL(@FormID,0))+''','''+isnull(@Doccode,'')+''','+convert(varchar(10),isnull(@Event,0))+','''+isnull(@OptionID,'')+''','''+isnull(@Usercode,'')+''','''+isnull(@TerminalID,'')+''',@Result output' +dbo.crlf()
 			BEGIN TRY
-				print @sql
+ 
 				EXEC sp_executesql @sql,N'@DataSourceXML nvarchar(max),@Result varchar(max) output,@ret int output',
 				@DataSourceXML=@DataSourceXML,@Result=@Result output ,@ret=@ret  output
 			END TRY

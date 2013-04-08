@@ -50,7 +50,7 @@ AS
 		inner JOIN iCouponsGeneral c with(nolock) ON i.CouponsCode=c.CouponsCode
 		inner JOIN gCouponsGroup d with(nolock) ON c.GroupCode=d.GroupCode
 		LEFT JOIN oStorage b with(nolock) ON i.stCode=b.stCode 
-		WHERE   (@stcode='' OR b.stCode=@stcode)
+		WHERE   (@stcode='' or @stcode='119.769' OR b.stCode=@stcode)
 		AND (@CouponsCode='' OR i.CouponsCode=@CouponsCode)
 		AND (@CouponsBarcode='' OR i.CouponsBarcode=@CouponsBarcode)
 		AND (@CouponsGroup='' OR d.GroupCode LIKE @CouponsGroup +'%')
