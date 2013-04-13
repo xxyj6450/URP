@@ -7,7 +7,7 @@
 备注：
 #CouponsDocData可按具体业务传入具体值
 */
-create proc sp_CheckPresentCoupons
+alter proc sp_CheckPresentCoupons
 	@FormID int,
 	@Doccode varchar(50),
 	@RefFormID int=0,
@@ -34,6 +34,7 @@ as
 					Refcode VARCHAR(20),
 					packageID VARCHAR(20),
 					ComboCode VARCHAR(50),
+					ComboPrice money,
 					SdorgID VARCHAR(50),
 					dptType VARCHAR(50),
 					SdorgPath VARCHAR(500),
@@ -212,6 +213,9 @@ as
 						update a
 							set a.PackageType=isnull(b.DocType,'')
 						From #CouponsDocData a left join policy_h b WITH(NOLOCK) on a.packageid=b.doccode
+						update a
+							set a.ComboPrice=ch.Price
+						from #CouponsDocData a left join Combo_H ch with(nolock) on a.ComboCode=ch.ComboCode
 					END
 				--处理中文
 				update #CouponsDocData
@@ -235,7 +239,7 @@ as
 		--若不存在优惠券，则直接退出了
 		if not exists(select 1 from #CouponsDocData where isnull(CouponsBarcode,'')<>'')
 			BEGIN
-				print '没有优惠券业务数据,操作中止.'
+				print '优惠券赠送规则检查-->没有优惠券业务数据,操作中止.'
 				return -1
 			END
 		

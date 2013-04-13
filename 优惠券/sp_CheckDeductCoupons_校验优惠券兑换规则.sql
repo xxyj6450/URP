@@ -34,6 +34,7 @@ as
 					Refcode VARCHAR(20),
 					packageID VARCHAR(20),
 					ComboCode VARCHAR(50),
+					ComboPrice money,
 					SdorgID VARCHAR(50),
 					dptType VARCHAR(50),
 					SdorgPath VARCHAR(500),
@@ -98,7 +99,7 @@ as
 					begin
 						INSERT INTO #CouponsDocData
 							(  Doccode,   DocDate,   FormID,   Doctype,   
-								RefFormID,   Refcode,   packageID,   ComboCode,   
+								RefFormID,   Refcode,   packageID,   ComboCode,
 								SdorgID,   dptType,   SdorgPath,   
 								AreaID,   AreaPath,   stcode,   companyID,   
 								cltCode,   CouponsBarcode,   STATE,   CouponsCode,   
@@ -110,7 +111,7 @@ as
 								Matgroup,   MatType,   MatgroupPath,   Price,   
 								totalMoney,   digit,   deductAmount,CouponsOwner,canOverlay,RowID,RefRowID,
 								Seriescode,beginValidDate,endValidDate,OWNER,CouponsAuthKey,Occupyed,OccupyedDoccode )
-
+								 
 						select @Doccode,getdate(),@FormID,NULL as DocType,NULL,NULL,@PackageID as packageid,@combocode AS combocode,
 						o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,@Customercode,
 						s.CouponsBarCode,NULL [State],ig.CouponsCode,ig.CouponsName, ig.GroupCode,ig.CodeMode,ig.CodeLength,
@@ -132,7 +133,7 @@ as
 						--将待处理数据放至临时表
 								INSERT INTO #CouponsDocData
 									(  Doccode,   DocDate,   FormID,   Doctype,   
-										RefFormID,   Refcode,   packageID,   ComboCode,   
+										RefFormID,   Refcode,   packageID,   ComboCode,
 										SdorgID,   dptType,   SdorgPath,   
 										AreaID,   AreaPath,   stcode,   companyID,   
 										cltCode,   CouponsBarcode,   STATE,   CouponsCode,   
@@ -177,7 +178,7 @@ as
 						)
 						INSERT INTO #CouponsDocData
 							(  Doccode,   DocDate,   FormID,   Doctype,   
-								RefFormID,   Refcode,   packageID,   ComboCode,   
+								RefFormID,   Refcode,   packageID,   ComboCode,
 								SdorgID,   dptType,   SdorgPath,   
 								AreaID,   AreaPath,   stcode,   companyID,   
 								cltCode,   CouponsBarcode,   STATE,   CouponsCode,   
@@ -212,6 +213,9 @@ as
 						update a
 							set a.PackageType=isnull(b.DocType,'')
 						From #CouponsDocData a left join policy_h b WITH(NOLOCK) on a.packageid=b.doccode
+						update a
+							set a.ComboPrice=ch.Price
+						from #CouponsDocData a left join Combo_H ch with(nolock) on a.ComboCode=ch.ComboCode
 					END
  
 				--处理中文
