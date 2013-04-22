@@ -114,7 +114,7 @@ as
 								 
 						select @Doccode,getdate(),@FormID,NULL as DocType,NULL,NULL,@PackageID as packageid,@combocode AS combocode,
 						o2.SDOrgID,o2.dptType, o2.[PATH],g.areaid,g.[PATH],o.stCode,o.PlantID,@Customercode,
-						s.CouponsBarCode,NULL [State],ig.CouponsCode,ig.CouponsName, ig.GroupCode,ig.CodeMode,ig.CodeLength,
+						s.CouponsBarCode,i.State [State],ig.CouponsCode,ig.CouponsName, ig.GroupCode,ig.CodeMode,ig.CodeLength,
 						ig.SourceMode,ig.PresentMode,ig.PresentCount,ig.PresentMoney,ig.PresentFormGroup,ig.ExchangeMode,ig.ExchangeCount,ig.ExchangeMoney,ig.FormGroup,
 						ig.ForceCheckStock,ig.BeginDate,ig.EndDate,ig.Valid,ig.price,	s.MatCode,s.MatName,ig2.MatGroup,ig2.mattype,ig3.[PATH],
 						s.price,s.totalmoney,s.Digit,s.DeductAmout,ig.CouponsOwner,ig.canOverlay,s.RowID,
@@ -459,13 +459,13 @@ as
 			BEGIN
 					--判断按商品兑换的优惠券,是否超过优惠金额限制
 					SELECT @tips='以下优惠超过优惠金额限制.'+dbo.crlf()
-					;WITH cte AS(
+					/*;WITH cte AS(
 						SELECT a.seriescode,a.Matcode,a.matname,couponscode,CouponsName,SUM(ISNULL(a.deductAmount,0)) AS num ,convert(money,a.ExchangeMoney) as ExchangeMoney ,a.digit
 						FROM #CouponsDocData a  
 						WHERE ExchangeMode='按商品'
 						GROUP BY a.seriescode,Matcode,a.matname,CouponsCode,CouponsName,a.ExchangeMoney,a.digit
 					)
-					select * from cte
+					select * from cte*/
 					;WITH cte AS(
 						SELECT a.seriescode,a.Matcode,a.matname,couponscode,CouponsName,SUM(ISNULL(a.deductAmount,0)) AS num ,convert(money,a.ExchangeMoney) as ExchangeMoney ,a.digit
 						FROM #CouponsDocData a  

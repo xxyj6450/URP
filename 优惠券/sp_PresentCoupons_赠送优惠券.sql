@@ -34,7 +34,7 @@ as
 			BEGIN
 				--校验赠送规则
 				BEGIN TRY
-					exec sp_checkPresentCoupons @formid,@doccode,@refFormid,@optionID,@userCode
+					exec sp_checkPresentCoupons   @formid,@doccode,@refFormid,@Refcode,@Stcode,@Customercode ,@PackageId ,@ComboCode ,@optionID,@userCode
 				END TRY
 				BEGIN CATCH
 					select @tips=dbo.getLastError('优惠券赠送规则校验失败。')

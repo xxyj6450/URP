@@ -40,7 +40,7 @@ exec sp_ComfirmReceipt 'JDC2012121500460',4950,'SYSTEM','2.1.791.03.25','111.769
 
 */
  
-alter proc sp_ComfirmReceipt
+ALTER proc [dbo].[sp_ComfirmReceipt]
 	@Doccode varchar(20),						--单号
 	@Formid int,										--功能号
 	@Usercode varchar(50),						--用户名
@@ -59,7 +59,7 @@ as
 		declare @refcode varchar(20),  @sql nvarchar(max),@tips varchar(max),@ret int,
 		@trancount int,@SQL_Seriescode varchar(max),@sql_Fields varchar(max),
 		@AccessName varchar(200),@SYSTEMNAME varchar(50),@SeriesRowcount INT,
-		@DatabaseName VARCHAR(50),@ServerName VARCHAR(50),@rowcount int,@DocDataXML nvarchar(max),@ResultXML varchar(8000),@DataSourceXML nvarchar(max)
+		@DatabaseName VARCHAR(50),@ServerName VARCHAR(50),@rowcount int,@DocDataXML nvarchar(max),@ResultXML varchar(8000),@DataSourceXML varchar(max)
 		declare @hXMLDocument int,@Definition varchar(max)
 		/**************************************************参数检查********************************************************************/
 		--若实例ID为空,则尝试从配送仓库中取出服务器实例ID
@@ -193,7 +193,7 @@ as
 						from #iseries a inner join dbo.iSeries b with(nolock) on a.seriescode=b.seriescode
 						--生成单据数据源
 						Insert Into #DataSource(Doccode,FormID,Docdate,SDOrgID,dptType,stcode,stname,AreaID,SDOrgPath,AreaPath,Seriescode,rowid,Matcode,MatName,Matgroup,MatgroupPath,Digit,Price,Totalmoney)
-						select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,os.dpttype,sph.instcode,sph.instname,os.AreaID,os.PATH,ga.PATH,
+						select @Doccode,@Formid,convert(varchar(10),sph.docdate,120),sph.sdorgid2,os.dpttype,sph.instcode,sph.instname,os.AreaID,os.PATH,ga.PATH,
 						sp.Seriescode,sp.rowid,sp.MatCode,sp.MatName,img.MatGroup,img2.PATH,sp.Digit,sp.price,sp.totalmoney
 						From sPickorderHD sph with(nolock) inner join sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode
 						inner join oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID
@@ -202,7 +202,7 @@ as
 						inner join iMatGroup img2 with(nolock) on img.MatGroup=img2.matgroup
 						where sph.DocCode=@Doccode
 						Insert Into #DocData(Doccode,FormID,Docdate,SDOrgID,stcode,stname,dptType,AreaID,SDOrgPath,AreaPath)
-						select @Doccode,@Formid,convert(varchar(10),getdate(),120),sph.sdorgid2,sph.instcode,sph.instname,os.dpttype,os.AreaID,os.PATH,ga.PATH
+						select @Doccode,@Formid,convert(varchar(10),sph.docdate,120),sph.sdorgid2,sph.instcode,sph.instname,os.dpttype,os.AreaID,os.PATH,ga.PATH
 						From sPickorderHD sph with(nolock) --inner join sPickorderitem sp with(nolock) on sph.DocCode=sp.DocCode
 						inner join oSDOrg os with(nolock) on sph.sdorgid2=os.SDOrgID
 						inner join gArea ga with(nolock) on os.AreaID=ga.areaid
@@ -268,20 +268,24 @@ as
 				Convert(nvarchar(max),(Select ID,Seriescode,RowID,Matcode,MatName,Docitem,state from #iSeries For xml raw))+'</DataTable></root>'
 				
 			END
+		--select * from #iSeries
 		--print @DataSourceXML
 		/***********************************************************业务处理****************************************************/
 		select @TRANCOUNT=@@TRANCOUNT
 		if @trancount=0 begin tran
 		begin try
-			--执行优惠券策略
-			exec @ret=URP11.JTURP.dbo.sp_DistributedExecuteStrategy @Formid,@Doccode,4,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
- 
+			if exists(select 1 from #DocData)
+				BEGIN
+					--执行优惠券策略
+					exec @ret=URP11.JTURP.dbo.sp_DistributedExecuteStrategy @Formid,@Doccode,4,'',@Usercode,@TerminalID,@DocDataXML ,@DataSourceXML,@ResultXML output
+				END
 			--将串号与优惠券绑定
 			if isnull(@ResultXML,'')<>''
 				BEGIN
 					--此处需要将varchar(8000)转换成nvarchar(max)
 					declare @data nvarchar(max)
 					select @Data=convert(nvarchar(max),@ResultXML)
+					--print @Data
 					exec sp_xml_preparedocument @hXMLDocument output,@data
 					update a
 						set a.CouponsBarcode=b.Couponsbarcode,
