@@ -12,8 +12,8 @@ SELECT     dbo.Unicom_Orders.DocCode, dbo.Unicom_Orders.FormID, dbo.Unicom_Order
                       dbo.Unicom_Orders.summoney,       
                       dbo.Unicom_Orders.RulesFEE, dbo.Unicom_Orders.ServiceFEE, dbo.Unicom_Orders.PhoneRate,       
                       dbo.Unicom_Orders.CardFEE, dbo.Unicom_Orders.OtherFEE, Unicom_Orders.cardfee1,    
-                       dbo.Unicom_Orders.ComboFEE,   dbo.Unicom_Orders.rewards, dbo.Unicom_Orders.totalmoney2, dbo.Unicom_Orders.DeductAmout,     
-                       dbo.Unicom_Orders.totalmoney3, dbo.Unicom_Orders.totalmoney4, dbo.Unicom_Orders.Credit, dbo.Unicom_Orders.commission,     
+                       dbo.Unicom_Orders.ComboFEE,   dbo.Unicom_Orders.rewards, dbo.Unicom_Orders.totalmoney2, isnull(dbo.Unicom_Orders.DeductAmout,0) as DeductAmout,
+                       isnull( dbo.Unicom_Orders.matDeductAmount,0) as matDeductAmount,dbo.Unicom_Orders.totalmoney3, dbo.Unicom_Orders.totalmoney4, dbo.Unicom_Orders.Credit, dbo.Unicom_Orders.commission,     
                        --预存款项    
                        dbo.Unicom_Orders.Price, Unicom_Orders.Deposits,Unicom_Orders.BasicDeposits,Unicom_Orders.minDeposits,Unicom_Orders.DepositsMatcode,Unicom_Orders.DepositsMatName,    
                       --手机信息,空白卡    
@@ -34,11 +34,13 @@ SELECT     dbo.Unicom_Orders.DocCode, dbo.Unicom_Orders.FormID, dbo.Unicom_Order
                       Unicom_Orders.packagename,dbo.Unicom_Orders.PackageCode, --dbo.Unicom_OrderDetails.DocItem, dbo.Unicom_OrderDetails.rowid,       
                       pg.PolicygroupID AS packageTypeID,pg.PolicyGroupName AS PackageType,dbo.Unicom_Orders.node,    
                      pg.path as PolicyGroupPath,isnull(pg.OpenAccount,0) as OpenAccount, isnull(pg.oldCustomerBusi,0) as old,isnull(pg.hasPhone,0) as hasPhone,pg.StockState,isnull(dbo.osdorg.CommissionMode,'') AS CommissionMode   
-FROM         dbo.Unicom_Orders WITH(NOLOCK)    
+FROM         dbo.Unicom_Orders   WITH(NOLOCK)    
      inner JOIN policy_h ph ON dbo.Unicom_Orders.PackageID=ph.DocCode     
                     inner Join T_PolicyGroup pg On ph.PolicygroupID=pg.PolicyGroupID    
       INNER JOIN dbo.oSDOrg WITH(NOLOCK) ON dbo.Unicom_Orders.sdorgid = dbo.oSDOrg.SDOrgID       
       INNER JOIN   gArea ga ON dbo.oSDOrg.AreaID=ga.areaid      
      left JOIN iMatgeneral WITH(NOLOCK) ON Unicom_Orders.MatCode=iMatgeneral.MatCode      
-                    left Join  dbo.iMatGroup ON dbo.iMatGeneral.MatGroup = dbo.iMatGroup.matgroup       
+                    left Join  dbo.iMatGroup ON dbo.iMatGeneral.MatGroup = dbo.iMatGroup.matgroup    
                    -- left JOIN  dbo.iSeries   WITH(NOLOCK) ON dbo.Unicom_Orders.seriesCode = dbo.iSeries.SeriesCode
+                   
+                   --select top 10 * from [v_UnicomOrders]
